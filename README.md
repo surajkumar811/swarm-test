@@ -38,7 +38,7 @@ pip install "swarm-test[langchain]"
 From source:
 
 ```bash
-git clone https://github.com/swarm-test/swarm-test
+git clone https://github.com/surajkumar811/swarm-test
 cd swarm-test
 pip install -e ".[dev]"
 ```
