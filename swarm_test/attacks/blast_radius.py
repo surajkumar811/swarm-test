@@ -64,9 +64,7 @@ class BlastRadiusAttack(BaseAttack):
 
         # 1. Single Points of Failure (articulation points)
         spofs = graph.find_single_points_of_failure()
-        metrics["single_points_of_failure"] = [
-            g.nodes[s].get("name", s) for s in spofs if s in g
-        ]
+        metrics["single_points_of_failure"] = [g.nodes[s].get("name", s) for s in spofs if s in g]
 
         for spof_id in spofs:
             if spof_id not in g:
@@ -99,9 +97,7 @@ class BlastRadiusAttack(BaseAttack):
 
         # 2. Critical path analysis
         critical_path = graph.get_critical_path()
-        metrics["critical_path"] = [
-            g.nodes[n].get("name", n) for n in critical_path if n in g
-        ]
+        metrics["critical_path"] = [g.nodes[n].get("name", n) for n in critical_path if n in g]
         metrics["critical_path_length"] = len(critical_path)
 
         if len(critical_path) >= 4:
@@ -170,10 +166,7 @@ class BlastRadiusAttack(BaseAttack):
                 )
 
         # 5. Isolated agents (zero in-degree AND zero out-degree, excluding root)
-        isolated = [
-            n for n in g.nodes()
-            if g.in_degree(n) == 0 and g.out_degree(n) == 0
-        ]
+        isolated = [n for n in g.nodes() if g.in_degree(n) == 0 and g.out_degree(n) == 0]
         if isolated:
             isolated_names = [g.nodes[i].get("name", i) for i in isolated]
             findings.append(
@@ -187,9 +180,7 @@ class BlastRadiusAttack(BaseAttack):
                     ),
                     affected_agents=isolated,
                     evidence={"isolated_agents": isolated_names},
-                    remediation=(
-                        "Remove unused agents or integrate them into the swarm workflow."
-                    ),
+                    remediation=("Remove unused agents or integrate them into the swarm workflow."),
                 )
             )
 

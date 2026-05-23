@@ -128,9 +128,7 @@ class ContextLeakageAttack(BaseAttack):
         return check_sensitive_leakage(full_text)
 
     @staticmethod
-    def _scan_restricted_keys(
-        graph: Any, findings: list[Finding], metrics: dict[str, Any]
-    ) -> None:
+    def _scan_restricted_keys(graph: Any, findings: list[Finding], metrics: dict[str, Any]) -> None:
         """Find events where payload dict keys suggest sensitive data transfer."""
         for event in graph.events:
             for key in event.payload:

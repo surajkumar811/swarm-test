@@ -22,9 +22,19 @@ def cli() -> None:
 @click.argument("script", type=click.Path(exists=True, file_okay=True, dir_okay=False))
 @click.option("--output", "-o", default=None, help="Output HTML report path (e.g. report.html)")
 @click.option("--json-output", "-j", default=None, help="Output JSON report path")
-@click.option("--swarm-var", default="crew", show_default=True, help="Variable name of the swarm object in the script")
+@click.option(
+    "--swarm-var",
+    default="crew",
+    show_default=True,
+    help="Variable name of the swarm object in the script",
+)
 @click.option("--name", default=None, help="Override swarm name in report")
-@click.option("--fail-on-critical", is_flag=True, default=False, help="Exit with code 1 if CRITICAL findings exist")
+@click.option(
+    "--fail-on-critical",
+    is_flag=True,
+    default=False,
+    help="Exit with code 1 if CRITICAL findings exist",
+)
 def probe(
     script: str,
     output: str | None,
@@ -68,6 +78,7 @@ def probe(
 
     if output:
         from swarm_test.reporters.html import HtmlReporter
+
         reporter = HtmlReporter()
         path = reporter.render_with_graph(report, probe_obj.graph, output)
         console.print(f"\n[green]HTML report saved to:[/green] {path}")
@@ -80,6 +91,7 @@ def probe(
 
     if fail_on_critical and report.all_findings:
         from swarm_test.core.models import Severity
+
         has_critical = any(f.severity == Severity.CRITICAL for f in report.all_findings)
         if has_critical:
             console.print("[red]CRITICAL findings detected — exiting with code 1[/red]")
@@ -104,7 +116,9 @@ def scan(agents: tuple, edges: tuple, output: str | None, name: str) -> None:
     event_list = []
     for edge in edges:
         if ":" not in edge:
-            console.print(f"[yellow]Skipping invalid edge format '{edge}' (expected 'source:target')[/yellow]")
+            console.print(
+                f"[yellow]Skipping invalid edge format '{edge}' (expected 'source:target')[/yellow]"
+            )
             continue
         src_name, dst_name = edge.split(":", 1)
         if src_name not in agent_nodes:
@@ -130,6 +144,7 @@ def scan(agents: tuple, edges: tuple, output: str | None, name: str) -> None:
 
     if output:
         from swarm_test.reporters.html import HtmlReporter
+
         reporter = HtmlReporter()
         path = reporter.render_with_graph(report, probe_obj.graph, output)
         console.print(f"\n[green]HTML report saved to:[/green] {path}")
@@ -140,6 +155,7 @@ def version_cmd() -> None:
     """Print version information."""
     try:
         from importlib.metadata import version
+
         v = version("swarm-test")
     except Exception:
         v = "0.1.0"

@@ -51,9 +51,7 @@ class ConsoleReporter:
 
         # Header panel
         risk_color = (
-            "red" if report.risk_score >= 60
-            else "yellow" if report.risk_score >= 30
-            else "green"
+            "red" if report.risk_score >= 60 else "yellow" if report.risk_score >= 30 else "green"
         )
         header_text = (
             f"[bold]Swarm:[/bold] {report.swarm_name}\n"
@@ -88,7 +86,10 @@ class ConsoleReporter:
                 result.test_name,
                 status_text,
                 str(len(result.findings)),
-                Text(str(sev.get("critical", 0)), style="bold red" if sev.get("critical", 0) else "dim"),
+                Text(
+                    str(sev.get("critical", 0)),
+                    style="bold red" if sev.get("critical", 0) else "dim",
+                ),
                 Text(str(sev.get("high", 0)), style="red" if sev.get("high", 0) else "dim"),
                 f"{result.duration_ms:.1f}ms",
             )
@@ -113,14 +114,22 @@ class ConsoleReporter:
         # Findings detail
         all_findings = report.all_findings
         if not all_findings:
-            c.print(Panel("[green]No findings — all tests passed cleanly.[/green]", border_style="green"))
+            c.print(
+                Panel(
+                    "[green]No findings — all tests passed cleanly.[/green]", border_style="green"
+                )
+            )
         else:
             c.print(Rule(f"[bold yellow]Findings ({len(all_findings)} total)[/bold yellow]"))
             c.print()
 
             # Sort by severity
             severity_order = [
-                Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO
+                Severity.CRITICAL,
+                Severity.HIGH,
+                Severity.MEDIUM,
+                Severity.LOW,
+                Severity.INFO,
             ]
             sorted_findings = sorted(
                 all_findings,

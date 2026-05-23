@@ -103,7 +103,9 @@ class AgentInterceptor:
 
         return wrapper
 
-    def patch_method(self, obj: Any, method_name: str, event_type: EventType = EventType.AGENT_CALL) -> bool:
+    def patch_method(
+        self, obj: Any, method_name: str, event_type: EventType = EventType.AGENT_CALL
+    ) -> bool:
         """Monkey-patch a method on obj and record the original for restoration."""
         original = getattr(obj, method_name, None)
         if original is None or not callable(original):

@@ -121,9 +121,7 @@ class SwarmGraph:
             cycles = []
         return cycles
 
-    def get_critical_path(
-        self, source: str | None = None, target: str | None = None
-    ) -> list[str]:
+    def get_critical_path(self, source: str | None = None, target: str | None = None) -> list[str]:
         """
         Return the longest path (critical path) through the DAG.
         If source/target not given, uses dag_longest_path.
@@ -181,9 +179,9 @@ class SwarmGraph:
             "single_points_of_failure": len(spofs),
             "density": round(nx.density(g), 4),
             "is_weakly_connected": nx.is_weakly_connected(g) if n > 0 else False,
-            "top_central_agent": max(centrality, key=centrality.get)
-            if centrality
-            else None,
+            "top_central_agent": (
+                max(centrality, key=lambda k: centrality[k]) if centrality else None
+            ),
             "max_betweenness": round(max(centrality.values()), 4) if centrality else 0,
             "critical_path_length": len(self.get_critical_path()),
         }

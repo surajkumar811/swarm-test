@@ -115,9 +115,7 @@ class IntentDriftAttack(BaseAttack):
             if not role or role == "unknown":
                 continue
 
-            agent_events = [
-                e for e in events if e.source_agent_id == agent_id
-            ]
+            agent_events = [e for e in events if e.source_agent_id == agent_id]
             violations = self._check_role_violations(role, agent_events)
             if violations:
                 metrics["role_violations"] += 1
@@ -144,9 +142,7 @@ class IntentDriftAttack(BaseAttack):
         delegation_findings = self._check_unexpected_delegation(graph)
         findings.extend(delegation_findings)
 
-        metrics["drift_events"] = (
-            metrics["hijacking_attempts"] + metrics["role_violations"]
-        )
+        metrics["drift_events"] = metrics["hijacking_attempts"] + metrics["role_violations"]
 
         return TestResult(
             test_name=self.name,
@@ -190,10 +186,11 @@ class IntentDriftAttack(BaseAttack):
         Detect edges where an agent delegates to another agent with a
         higher out-degree (centrality), which might indicate privilege escalation.
         """
-        findings = []
-        centrality = {}
+        findings: list[Finding] = []
+        centrality: dict[str, float] = {}
         try:
             import networkx as nx
+
             centrality = nx.betweenness_centrality(graph.graph)
         except Exception:
             return findings

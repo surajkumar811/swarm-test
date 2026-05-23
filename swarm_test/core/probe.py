@@ -168,9 +168,7 @@ class SwarmProbe:
             from swarm_test.core.models import Severity
 
             fail_severities = {Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM}
-            has_actionable = any(
-                f.severity in fail_severities for f in result.findings
-            )
+            has_actionable = any(f.severity in fail_severities for f in result.findings)
             result.status = TestStatus.FAILED if has_actionable else TestStatus.PASSED
         except Exception as exc:
             logger.exception("Test %s raised an exception", test_name)

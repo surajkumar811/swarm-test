@@ -117,9 +117,7 @@ class CollusionDetectionAttack(BaseAttack):
 
             # Check if agents in SCC communicate much more with each other than outside
             external_edges = sum(
-                1
-                for src, dst in g.edges()
-                if (src in scc) != (dst in scc)  # XOR: one in, one out
+                1 for src, dst in g.edges() if (src in scc) != (dst in scc)  # XOR: one in, one out
             )
             total_edges = g.number_of_edges()
             isolation_ratio = 1 - (external_edges / max(total_edges, 1))
@@ -215,12 +213,18 @@ class CollusionDetectionAttack(BaseAttack):
 
             if failure_rate > 0.5:
                 # Check if downstream agent's events all appear successful
-                downstream_events = [
-                    e for e in events if e.source_agent_id == dst and e.success
-                ]
+                downstream_events = [e for e in events if e.source_agent_id == dst and e.success]
                 if downstream_events and len(downstream_events) >= len(failures):
-                    src_name = graph.graph.nodes.get(src, {}).get("name", src) if src in graph.graph else src
-                    dst_name = graph.graph.nodes.get(dst, {}).get("name", dst) if dst in graph.graph else dst
+                    src_name = (
+                        graph.graph.nodes.get(src, {}).get("name", src)
+                        if src in graph.graph
+                        else src
+                    )
+                    dst_name = (
+                        graph.graph.nodes.get(dst, {}).get("name", dst)
+                        if dst in graph.graph
+                        else dst
+                    )
                     findings.append(
                         Finding(
                             test_name="collusion_detection",

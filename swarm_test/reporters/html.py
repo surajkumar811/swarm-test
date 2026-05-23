@@ -246,12 +246,14 @@ class HtmlReporter:
     def render(self, report: SwarmReport, output_path: str = "swarm_report.html") -> str:
         graph_data = self._build_graph_data(report)
         risk_class = (
-            "risk-high" if report.risk_score >= 60
-            else "risk-medium" if report.risk_score >= 30
-            else "risk-low"
+            "risk-high"
+            if report.risk_score >= 60
+            else "risk-medium" if report.risk_score >= 30 else "risk-low"
         )
 
-        env = Environment(loader=BaseLoader(), autoescape=select_autoescape(default=True, default_for_string=True))
+        env = Environment(
+            loader=BaseLoader(), autoescape=select_autoescape(default=True, default_for_string=True)
+        )
         env.filters["tojson"] = lambda v: json.dumps(v, default=str)
         template = env.from_string(_HTML_TEMPLATE)
 
@@ -280,11 +282,13 @@ class HtmlReporter:
 
         # For the HTML report we generate placeholder nodes based on agent_count
         for i in range(report.agent_count):
-            nodes.append({
-                "id": f"agent_{i}",
-                "name": f"Agent {i+1}",
-                "role": "unknown",
-            })
+            nodes.append(
+                {
+                    "id": f"agent_{i}",
+                    "name": f"Agent {i+1}",
+                    "role": "unknown",
+                }
+            )
 
         return {"nodes": nodes, "edges": edges}
 
@@ -306,12 +310,14 @@ class HtmlReporter:
                     edge[k] = v.isoformat()
 
         risk_class = (
-            "risk-high" if report.risk_score >= 60
-            else "risk-medium" if report.risk_score >= 30
-            else "risk-low"
+            "risk-high"
+            if report.risk_score >= 60
+            else "risk-medium" if report.risk_score >= 30 else "risk-low"
         )
 
-        env = Environment(loader=BaseLoader(), autoescape=select_autoescape(default=True, default_for_string=True))
+        env = Environment(
+            loader=BaseLoader(), autoescape=select_autoescape(default=True, default_for_string=True)
+        )
         env.filters["tojson"] = lambda v: json.dumps(v, default=str)
         template = env.from_string(_HTML_TEMPLATE)
 
