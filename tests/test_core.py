@@ -23,6 +23,7 @@ from swarm_test.attacks.blast_radius import BlastRadiusAttack
 from swarm_test.attacks.context_leakage import ContextLeakageAttack
 from swarm_test.attacks.intent_drift import IntentDriftAttack
 from swarm_test.attacks.collusion import CollusionDetectionAttack
+from swarm_test.attacks.timeout_resilience import TimeoutResilienceAttack
 
 
 # ---------------------------------------------------------------------------
@@ -470,7 +471,7 @@ class TestSwarmProbe:
         report = probe.run_all()
         assert report is not None
         assert report.swarm_name == "test-swarm"
-        assert len(report.test_results) == 5
+        assert len(report.test_results) == 6
         # print_summary shouldn't raise
         report.print_summary()
 
@@ -506,6 +507,7 @@ class TestSwarmProbe:
             "intent_drift",
             "collusion_detection",
             "blast_radius",
+            "timeout_resilience",
         }
         assert test_names == expected
 
@@ -762,3 +764,109 @@ class TestAttackEdgeCases:
         result = probe.run_test(InfoOnlyAttack())
         assert result.status == TestStatus.PASSED
         assert len(result.findings) == 2
+
+
+# ---------------------------------------------------------------------------
+# Timeout Resilience tests
+# ---------------------------------------------------------------------------
+
+class TestTimeoutResilienceAttack:
+    def test_small_graph_passes(self):
+        """Single agent graph should pass with a note."""
+        g = SwarmGraph()
+        g.add_agent(AgentNode(name="Solo"))
+        attack = TimeoutResilienceAttack()
+        result = attack.run(g)
+        assert result.status == TestStatus.PASSED
+        assert len(result.findings) == 0
+        assert "note" in result.metrics
+
+    def test_detects_untimed_edges(self):
+        """Edges without duration_ms should be flagged."""
+        g = SwarmGraph()
+        a = AgentNode(name="Sender", role="worker")
+        b = AgentNode(name="Receiver", role="worker")
+        g.add_agent(a)
+        g.add_agent(b)
+        g.record_event(InteractionEvent(
+            source_agent_id=a.id,
+            target_agent_id=b.id,
+            event_type=EventType.TASK_DELEGATE,
+            duration_ms=None,
+        ))
+        attack = TimeoutResilienceAttack()
+        result = attack.run(g)
+        untimed = [f for f in result.findings if "no timeout configured" in f.title]
+        assert len(untimed) == 1
+        assert result.metrics["edges_without_timeout"] == 1
+
+    def test_detects_slow_interaction(self):
+        """An edge with duration_ms >= 30000 should produce a CRITICAL finding."""
+        g = SwarmGraph()
+        a = AgentNode(name="SlowCaller", role="worker")
+        b = AgentNode(name="SlowResponder", role="worker")
+        g.add_agent(a)
+        g.add_agent(b)
+        g.record_event(InteractionEvent(
+            source_agent_id=a.id,
+            target_agent_id=b.id,
+            event_type=EventType.AGENT_CALL,
+            duration_ms=35000.0,
+        ))
+        attack = TimeoutResilienceAttack()
+        result = attack.run(g)
+        slow = [f for f in result.findings if "Slow interaction" in f.title]
+        assert len(slow) == 1
+        assert slow[0].severity == Severity.CRITICAL
+        assert result.metrics["slow_interactions"] == 1
+
+    def test_detects_fragile_single_path(self):
+        """Agent with single upstream and no error events → fragile dependency."""
+        g = SwarmGraph()
+        a = AgentNode(name="OnlySource", role="data")
+        b = AgentNode(name="Dependent", role="processor")
+        c = AgentNode(name="Output", role="writer")
+        g.add_agent(a)
+        g.add_agent(b)
+        g.add_agent(c)
+        g.record_event(InteractionEvent(
+            source_agent_id=a.id,
+            target_agent_id=b.id,
+            event_type=EventType.TASK_DELEGATE,
+        ))
+        g.record_event(InteractionEvent(
+            source_agent_id=b.id,
+            target_agent_id=c.id,
+            event_type=EventType.TASK_DELEGATE,
+        ))
+        attack = TimeoutResilienceAttack()
+        result = attack.run(g)
+        fragile = [f for f in result.findings if "Fragile dependency" in f.title]
+        assert len(fragile) >= 1
+        assert result.metrics["fragile_single_path_agents"] >= 1
+
+    def test_timeout_events_reduce_findings(self):
+        """Agents with recorded TIMEOUT events should not be flagged as lacking handling."""
+        g = SwarmGraph()
+        a = AgentNode(name="Upstream", role="data")
+        b = AgentNode(name="Resilient", role="processor")
+        g.add_agent(a)
+        g.add_agent(b)
+        g.record_event(InteractionEvent(
+            source_agent_id=a.id,
+            target_agent_id=b.id,
+            event_type=EventType.TASK_DELEGATE,
+            duration_ms=100.0,
+        ))
+        # Record a TIMEOUT event involving b — proves it handles timeouts
+        g.record_event(InteractionEvent(
+            source_agent_id=b.id,
+            target_agent_id=a.id,
+            event_type=EventType.TIMEOUT,
+        ))
+        attack = TimeoutResilienceAttack()
+        result = attack.run(g)
+        # b should not appear in "No timeout handling" or "Fragile" findings
+        for f in result.findings:
+            if "No timeout handling" in f.title or "Fragile dependency" in f.title:
+                assert b.id not in f.affected_agents

@@ -111,6 +111,7 @@ class SwarmProbe:
         from swarm_test.attacks.collusion import CollusionDetectionAttack
         from swarm_test.attacks.context_leakage import ContextLeakageAttack
         from swarm_test.attacks.intent_drift import IntentDriftAttack
+        from swarm_test.attacks.timeout_resilience import TimeoutResilienceAttack
 
         return [
             CascadeFailureAttack(),
@@ -118,6 +119,7 @@ class SwarmProbe:
             IntentDriftAttack(),
             CollusionDetectionAttack(),
             BlastRadiusAttack(),
+            TimeoutResilienceAttack(),
         ]
 
     # ------------------------------------------------------------------
@@ -125,7 +127,7 @@ class SwarmProbe:
     # ------------------------------------------------------------------
 
     def run_all(self, *, timeout_per_test: float = 30.0) -> SwarmReport:
-        """Run all 5 chaos tests and return the aggregated SwarmReport."""
+        """Run all 6 chaos tests and return the aggregated SwarmReport."""
         started = datetime.now(timezone.utc)
         results: list[TestResult] = []
 
