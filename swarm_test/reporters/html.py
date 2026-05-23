@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any
 
-from jinja2 import Environment, BaseLoader, select_autoescape
+from jinja2 import BaseLoader, Environment, select_autoescape
 
-from swarm_test.core.models import Severity, SwarmReport
+from swarm_test.core.models import SwarmReport
 
 _SEVERITY_COLORS_HEX = {
     "critical": "#dc2626",
@@ -271,16 +270,13 @@ class HtmlReporter:
         return output_path
 
     @staticmethod
-    def _build_graph_data(report: SwarmReport) -> Dict[str, Any]:
+    def _build_graph_data(report: SwarmReport) -> dict[str, Any]:
         """Build a minimal graph representation for D3."""
         # We need to reconstruct the graph data from the report
         # The probe stores graph in report.graph_metrics; for rendering
         # we use the agent_count and edge_count and reconstruct from metrics.
-        nodes: List[Dict[str, Any]] = []
-        edges: List[Dict[str, Any]] = []
-
-        # If graph_metrics has node info, use it
-        graph_metrics = report.graph_metrics or {}
+        nodes: list[dict[str, Any]] = []
+        edges: list[dict[str, Any]] = []
 
         # For the HTML report we generate placeholder nodes based on agent_count
         for i in range(report.agent_count):
@@ -289,9 +285,6 @@ class HtmlReporter:
                 "name": f"Agent {i+1}",
                 "role": "unknown",
             })
-
-        # Generate edges from graph_metrics if available
-        critical_path = graph_metrics.get("critical_path", [])
 
         return {"nodes": nodes, "edges": edges}
 

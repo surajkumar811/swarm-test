@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-from abc import ABC, abstractmethod
-from typing import Any, Optional
+from abc import ABC
+from typing import Any
 
 from swarm_test.core.graph import SwarmGraph
 from swarm_test.core.models import AgentNode, EventType, InteractionEvent
@@ -96,7 +96,7 @@ class BaseAdapter(ABC):
         self,
         name: str,
         role: str = "unknown",
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ) -> AgentNode:
         return AgentNode(
             name=name,

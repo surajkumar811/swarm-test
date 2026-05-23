@@ -6,14 +6,15 @@ import functools
 import logging
 import re
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from swarm_test.core.models import EventType, InteractionEvent
 
 logger = logging.getLogger(__name__)
 
 # Patterns considered sensitive in agent payloads
-_SENSITIVE_PATTERNS: List[re.Pattern] = [
+_SENSITIVE_PATTERNS: list[re.Pattern] = [
     re.compile(r"(?i)(password|passwd|pwd)\s*[:=]\s*\S+"),
     re.compile(r"(?i)(api[_-]?key|apikey|token|secret)\s*[:=]\s*\S+"),
     re.compile(r"(?i)(bearer\s+[A-Za-z0-9\-._~+/]+=*)"),
@@ -25,7 +26,7 @@ _SENSITIVE_PATTERNS: List[re.Pattern] = [
 ]
 
 
-def check_sensitive_leakage(text: str) -> List[str]:
+def check_sensitive_leakage(text: str) -> list[str]:
     """
     Scan text for patterns that indicate sensitive data leakage.
     Returns list of pattern descriptions that matched.
@@ -52,7 +53,7 @@ class AgentInterceptor:
         self.graph = graph
         self.source_agent_id = source_agent_id
         self.target_agent_id = target_agent_id
-        self._patched: List[Tuple[Any, str, Callable]] = []
+        self._patched: list[tuple[Any, str, Callable]] = []
 
     def wrap(self, fn: Callable, event_type: EventType = EventType.AGENT_CALL) -> Callable:
         """Return a wrapped version of fn that records an interaction event."""
@@ -60,9 +61,9 @@ class AgentInterceptor:
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             start = time.perf_counter()
-            payload: Dict[str, Any] = {}
+            payload: dict[str, Any] = {}
             success = True
-            error_msg: Optional[str] = None
+            error_msg: str | None = None
 
             # Capture input
             try:
@@ -134,7 +135,7 @@ class SwarmInterceptorRegistry:
 
     def __init__(self, graph: Any) -> None:
         self.graph = graph
-        self._interceptors: List[AgentInterceptor] = []
+        self._interceptors: list[AgentInterceptor] = []
         self._active = False
 
     def create_interceptor(self, source_id: str, target_id: str) -> AgentInterceptor:

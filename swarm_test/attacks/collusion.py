@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any
 
 import networkx as nx
 
 from swarm_test.attacks.base import BaseAttack
-from swarm_test.core.models import EventType, Finding, Severity, TestResult, TestStatus
+from swarm_test.core.models import Finding, Severity, TestResult, TestStatus
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +35,8 @@ class CollusionDetectionAttack(BaseAttack):
     ECHO_CHAMBER_THRESHOLD = 0.8
 
     def run(self, graph: Any) -> TestResult:
-        findings: List[Finding] = []
-        metrics: Dict[str, Any] = {
+        findings: list[Finding] = []
+        metrics: dict[str, Any] = {
             "cliques_found": 0,
             "echo_chambers": 0,
             "cyclic_groups": 0,
@@ -101,7 +101,7 @@ class CollusionDetectionAttack(BaseAttack):
             metrics=metrics,
         )
 
-    def _detect_echo_chambers(self, graph: Any) -> List[Finding]:
+    def _detect_echo_chambers(self, graph: Any) -> list[Finding]:
         """Detect strongly connected components that form isolated echo chambers."""
         findings = []
         g = graph.graph
@@ -152,13 +152,13 @@ class CollusionDetectionAttack(BaseAttack):
         return findings
 
     @staticmethod
-    def _detect_collusion_cycles(graph: Any) -> List[Finding]:
+    def _detect_collusion_cycles(graph: Any) -> list[Finding]:
         """Flag cycles that bypass any orchestrator/manager node."""
         findings = []
         g = graph.graph
 
         # Identify potential orchestrator nodes (high in-degree + out-degree)
-        orchestrators: Set[str] = set()
+        orchestrators: set[str] = set()
         for node in g.nodes():
             role = g.nodes[node].get("role", "").lower()
             if any(r in role for r in ("manager", "orchestrator", "coordinator", "planner")):
@@ -193,7 +193,7 @@ class CollusionDetectionAttack(BaseAttack):
         return findings
 
     @staticmethod
-    def _detect_error_suppression(graph: Any) -> List[Finding]:
+    def _detect_error_suppression(graph: Any) -> list[Finding]:
         """
         Detect pairs of agents where one consistently sends failed events
         but the other's subsequent outputs show success (error suppression).
@@ -202,7 +202,7 @@ class CollusionDetectionAttack(BaseAttack):
         events = graph.events
 
         # Group events by (src, dst) edge
-        edge_events: Dict[Tuple[str, str], List[Any]] = defaultdict(list)
+        edge_events: dict[tuple[str, str], list[Any]] = defaultdict(list)
         for event in events:
             edge_events[(event.source_agent_id, event.target_agent_id)].append(event)
 

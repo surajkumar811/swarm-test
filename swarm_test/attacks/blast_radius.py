@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Set
+from typing import Any
 
 import networkx as nx
 
@@ -32,8 +32,8 @@ class BlastRadiusAttack(BaseAttack):
     )
 
     def run(self, graph: Any) -> TestResult:
-        findings: List[Finding] = []
-        metrics: Dict[str, Any] = {
+        findings: list[Finding] = []
+        metrics: dict[str, Any] = {
             "total_agents": 0,
             "total_edges": 0,
             "single_points_of_failure": [],

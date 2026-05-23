@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -44,7 +44,7 @@ class AgentNode(BaseModel):
     name: str
     role: str = "unknown"
     framework: str = "unknown"
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_active: bool = True
 
@@ -58,12 +58,12 @@ class InteractionEvent(BaseModel):
     source_agent_id: str
     target_agent_id: str
     event_type: EventType
-    payload: Dict[str, Any] = Field(default_factory=dict)
+    payload: dict[str, Any] = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    duration_ms: Optional[float] = None
+    duration_ms: float | None = None
     success: bool = True
-    error_message: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    error_message: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class Finding(BaseModel):
@@ -74,12 +74,12 @@ class Finding(BaseModel):
     severity: Severity
     title: str
     description: str
-    affected_agents: List[str] = Field(default_factory=list)
-    evidence: Dict[str, Any] = Field(default_factory=dict)
+    affected_agents: list[str] = Field(default_factory=list)
+    evidence: dict[str, Any] = Field(default_factory=dict)
     remediation: str = ""
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "test_name": self.test_name,
@@ -99,26 +99,26 @@ class TestResult(BaseModel):
     test_name: str
     status: TestStatus
     duration_ms: float = 0.0
-    findings: List[Finding] = Field(default_factory=list)
-    metrics: Dict[str, Any] = Field(default_factory=dict)
-    error: Optional[str] = None
+    findings: list[Finding] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
 
     @property
     def passed(self) -> bool:
         return self.status == TestStatus.PASSED
 
     @property
-    def critical_findings(self) -> List[Finding]:
+    def critical_findings(self) -> list[Finding]:
         return [f for f in self.findings if f.severity == Severity.CRITICAL]
 
     @property
-    def high_findings(self) -> List[Finding]:
+    def high_findings(self) -> list[Finding]:
         return [f for f in self.findings if f.severity == Severity.HIGH]
 
-    def severity_count(self) -> Dict[str, int]:
-        counts: Dict[str, int] = {s.value: 0 for s in Severity}
+    def severity_count(self) -> dict[str, int]:
+        counts: dict[str, int] = {s.value: 0 for s in Severity}
         for f in self.findings:
             counts[f.severity.value] += 1
         return counts
@@ -132,13 +132,13 @@ class SwarmReport(BaseModel):
     framework: str = "unknown"
     agent_count: int = 0
     edge_count: int = 0
-    test_results: List[TestResult] = Field(default_factory=list)
-    graph_metrics: Dict[str, Any] = Field(default_factory=dict)
+    test_results: list[TestResult] = Field(default_factory=list)
+    graph_metrics: dict[str, Any] = Field(default_factory=dict)
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
 
     @property
-    def all_findings(self) -> List[Finding]:
+    def all_findings(self) -> list[Finding]:
         findings = []
         for result in self.test_results:
             findings.extend(result.findings)

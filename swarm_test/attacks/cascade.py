@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from swarm_test.attacks.base import BaseAttack
 from swarm_test.core.models import Finding, Severity, TestResult, TestStatus
@@ -35,8 +35,8 @@ class CascadeFailureAttack(BaseAttack):
     ]
 
     def run(self, graph: Any) -> TestResult:
-        findings: List[Finding] = []
-        metrics: Dict[str, Any] = {
+        findings: list[Finding] = []
+        metrics: dict[str, Any] = {
             "agents_tested": 0,
             "max_impact_pct": 0.0,
             "most_critical_agent": None,

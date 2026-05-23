@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Optional
 
 import click
 from rich.console import Console
@@ -28,10 +27,10 @@ def cli() -> None:
 @click.option("--fail-on-critical", is_flag=True, default=False, help="Exit with code 1 if CRITICAL findings exist")
 def probe(
     script: str,
-    output: Optional[str],
-    json_output: Optional[str],
+    output: str | None,
+    json_output: str | None,
     swarm_var: str,
-    name: Optional[str],
+    name: str | None,
     fail_on_critical: bool,
 ) -> None:
     """Load a Python SCRIPT, extract the swarm object, and run all reliability tests."""
@@ -92,9 +91,9 @@ def probe(
 @click.option("--edges", "-e", multiple=True, help="Edges as 'source:target' pairs")
 @click.option("--output", "-o", default=None, help="Output HTML report path")
 @click.option("--name", default="cli-swarm", show_default=True, help="Swarm name")
-def scan(agents: tuple, edges: tuple, output: Optional[str], name: str) -> None:
+def scan(agents: tuple, edges: tuple, output: str | None, name: str) -> None:
     """Run a static graph scan from agent names and edge pairs without a live swarm."""
-    from swarm_test.core.models import AgentNode, InteractionEvent, EventType
+    from swarm_test.core.models import AgentNode, EventType, InteractionEvent
     from swarm_test.core.probe import SwarmProbe
 
     agent_nodes = {}

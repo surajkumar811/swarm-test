@@ -7,10 +7,9 @@ from typing import Any
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
+from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
-from rich.rule import Rule
-from rich import print as rprint
 
 from swarm_test.core.models import Severity, SwarmReport, TestStatus
 

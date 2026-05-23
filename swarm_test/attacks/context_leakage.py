@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from swarm_test.attacks.base import BaseAttack
 from swarm_test.core.interceptor import check_sensitive_leakage
-from swarm_test.core.models import EventType, Finding, Severity, TestResult, TestStatus
+from swarm_test.core.models import Finding, Severity, TestResult, TestStatus
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +46,8 @@ class ContextLeakageAttack(BaseAttack):
     )
 
     def run(self, graph: Any) -> TestResult:
-        findings: List[Finding] = []
-        metrics: Dict[str, Any] = {
+        findings: list[Finding] = []
+        metrics: dict[str, Any] = {
             "events_scanned": 0,
             "leaks_detected": 0,
             "affected_edges": [],
@@ -114,7 +114,7 @@ class ContextLeakageAttack(BaseAttack):
         )
 
     @staticmethod
-    def _scan_event(event: Any) -> List[str]:
+    def _scan_event(event: Any) -> list[str]:
         """Return list of sensitive pattern descriptions found in the event."""
         text_parts = []
 
@@ -129,7 +129,7 @@ class ContextLeakageAttack(BaseAttack):
 
     @staticmethod
     def _scan_restricted_keys(
-        graph: Any, findings: List[Finding], metrics: Dict[str, Any]
+        graph: Any, findings: list[Finding], metrics: dict[str, Any]
     ) -> None:
         """Find events where payload dict keys suggest sensitive data transfer."""
         for event in graph.events:

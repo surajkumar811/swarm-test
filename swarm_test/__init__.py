@@ -10,6 +10,7 @@ Quick start::
     report.print_summary()
 """
 
+from swarm_test.core.graph import SwarmGraph
 from swarm_test.core.models import (
     AgentNode,
     EventType,
@@ -20,7 +21,6 @@ from swarm_test.core.models import (
     TestResult,
     TestStatus,
 )
-from swarm_test.core.graph import SwarmGraph
 from swarm_test.core.probe import SwarmProbe
 
 __version__ = "0.1.0"

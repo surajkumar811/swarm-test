@@ -6,7 +6,7 @@ import importlib
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from swarm_test.core.graph import SwarmGraph
 from swarm_test.core.models import (
@@ -33,18 +33,18 @@ class SwarmProbe:
 
     def __init__(
         self,
-        swarm: Optional[Any] = None,
+        swarm: Any | None = None,
         *,
         swarm_name: str = "unnamed-swarm",
-        agents: Optional[List[AgentNode]] = None,
-        events: Optional[List[InteractionEvent]] = None,
-        framework: Optional[str] = None,
+        agents: list[AgentNode] | None = None,
+        events: list[InteractionEvent] | None = None,
+        framework: str | None = None,
     ) -> None:
         self.swarm = swarm
         self.swarm_name = swarm_name
         self.graph = SwarmGraph()
         self._framework = framework or self._detect_framework(swarm)
-        self._adapter: Optional[Any] = None
+        self._adapter: Any | None = None
 
         # Static graph fallback — supply agents/events directly
         if agents:
@@ -63,7 +63,7 @@ class SwarmProbe:
                 except Exception as exc:
                     logger.warning("Adapter ingest failed: %s", exc)
 
-        self._attacks: List[Any] = self._load_attacks()
+        self._attacks: list[Any] = self._load_attacks()
 
     # ------------------------------------------------------------------
     # Framework detection
@@ -86,7 +86,7 @@ class SwarmProbe:
             return "langchain"
         return "generic"
 
-    def _load_adapter(self) -> Optional[Any]:
+    def _load_adapter(self) -> Any | None:
         adapters = {
             "crewai": "swarm_test.integrations.crewai_adapter.CrewAIAdapter",
             "generic": "swarm_test.integrations.base.BaseAdapter",
@@ -105,7 +105,7 @@ class SwarmProbe:
             return None
 
     @staticmethod
-    def _load_attacks() -> List[Any]:
+    def _load_attacks() -> list[Any]:
         from swarm_test.attacks.blast_radius import BlastRadiusAttack
         from swarm_test.attacks.cascade import CascadeFailureAttack
         from swarm_test.attacks.collusion import CollusionDetectionAttack
@@ -127,7 +127,7 @@ class SwarmProbe:
     def run_all(self, *, timeout_per_test: float = 30.0) -> SwarmReport:
         """Run all 5 chaos tests and return the aggregated SwarmReport."""
         started = datetime.now(timezone.utc)
-        results: List[TestResult] = []
+        results: list[TestResult] = []
 
         logger.info(
             "SwarmProbe starting | framework=%s | agents=%d | events=%d",
@@ -167,9 +167,9 @@ class SwarmProbe:
             result.completed_at = datetime.now(timezone.utc)
             from swarm_test.core.models import Severity
 
-            _FAIL_SEVERITIES = {Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM}
+            fail_severities = {Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM}
             has_actionable = any(
-                f.severity in _FAIL_SEVERITIES for f in result.findings
+                f.severity in fail_severities for f in result.findings
             )
             result.status = TestStatus.FAILED if has_actionable else TestStatus.PASSED
         except Exception as exc:
@@ -196,11 +196,11 @@ class SwarmProbe:
     # Convenience helpers
     # ------------------------------------------------------------------
 
-    def add_agent(self, agent: AgentNode) -> "SwarmProbe":
+    def add_agent(self, agent: AgentNode) -> SwarmProbe:
         self.graph.add_agent(agent)
         return self
 
-    def record_event(self, event: InteractionEvent) -> "SwarmProbe":
+    def record_event(self, event: InteractionEvent) -> SwarmProbe:
         self.graph.record_event(event)
         return self
 

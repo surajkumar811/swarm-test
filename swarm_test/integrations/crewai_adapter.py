@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from swarm_test.core.graph import SwarmGraph
 from swarm_test.core.models import AgentNode, EventType, InteractionEvent
@@ -25,12 +25,12 @@ class CrewAIAdapter(BaseAdapter):
     framework_name = "crewai"
 
     def _ingest_impl(self, swarm: Any, graph: SwarmGraph) -> None:
-        agents_raw: List[Any] = getattr(swarm, "agents", []) or []
-        tasks_raw: List[Any] = getattr(swarm, "tasks", []) or []
+        agents_raw: list[Any] = getattr(swarm, "agents", []) or []
+        tasks_raw: list[Any] = getattr(swarm, "tasks", []) or []
         process = getattr(swarm, "process", "sequential")
 
         # Map raw agent → AgentNode
-        agent_map: Dict[int, AgentNode] = {}
+        agent_map: dict[int, AgentNode] = {}
         for raw_agent in agents_raw:
             node = self._build_node(raw_agent)
             graph.add_agent(node)
@@ -44,7 +44,7 @@ class CrewAIAdapter(BaseAdapter):
         nodes = list(agent_map.values())
 
         # Build task-level dependency edges
-        task_agent_map: Dict[int, AgentNode] = {}
+        task_agent_map: dict[int, AgentNode] = {}
         for task in tasks_raw:
             raw_agent = getattr(task, "agent", None)
             if raw_agent is not None and id(raw_agent) in agent_map:
