@@ -21,6 +21,7 @@ htmlcov/
 
 # Generated reports (keep examples intact)
 /*.html
+/*.json
 
 # Environment variables
 .env
