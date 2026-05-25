@@ -32,6 +32,7 @@ report.print_summary()
 pip install swarm-test
 # or with framework extras:
 pip install "swarm-test[crewai]"
+pip install "swarm-test[langgraph]"
 pip install "swarm-test[langchain]"
 ```
 
@@ -61,6 +62,24 @@ probe  = SwarmProbe(crew, swarm_name="my-crew")
 report = probe.run_all()
 report.print_summary()
 report.to_html("report.html")   # D3 graph visualization
+```
+
+### With a LangGraph workflow
+
+```python
+from langgraph.graph import StateGraph
+from swarm_test import SwarmProbe
+
+graph = StateGraph(dict)
+graph.add_node("researcher", researcher_fn)
+graph.add_node("writer", writer_fn)
+graph.add_edge("researcher", "writer")
+compiled = graph.compile()
+
+probe  = SwarmProbe(compiled, swarm_name="my-langgraph")
+report = probe.run_all()
+report.print_summary()
+report.to_json("report.json")   # Structured JSON with stable finding IDs
 ```
 
 ### Static graph (no live swarm)

@@ -89,6 +89,7 @@ class SwarmProbe:
     def _load_adapter(self) -> Any | None:
         adapters = {
             "crewai": "swarm_test.integrations.crewai_adapter.CrewAIAdapter",
+            "langgraph": "swarm_test.integrations.langgraph_adapter.LangGraphAdapter",
             "generic": "swarm_test.integrations.base.BaseAdapter",
             "static": None,
         }
