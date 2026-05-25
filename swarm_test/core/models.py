@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -182,3 +184,128 @@ class SwarmReport(BaseModel):
 
         reporter = HtmlReporter()
         return reporter.render(self, output_path)
+
+    def to_json(
+        self,
+        output_path: str | None = None,
+        *,
+        graph: Any = None,
+    ) -> dict[str, Any]:
+        """Export report as structured JSON with enriched finding records.
+
+        Each finding includes a stable ``finding_id`` hash, agent metadata
+        resolved from the graph, risk_type classification, and blast_radius.
+
+        Args:
+            output_path: If provided, write JSON to this file path.
+            graph: Optional ``SwarmGraph`` for resolving agent names/roles.
+
+        Returns:
+            The full JSON-serialisable dict.
+        """
+        # Build agent lookup from graph if available
+        agent_lookup: dict[str, dict[str, str]] = {}
+        if graph is not None:
+            for nid, data in graph.graph.nodes(data=True):
+                agent_lookup[nid] = {
+                    "name": data.get("name", nid),
+                    "role": data.get("role", "unknown"),
+                }
+
+        # Map test_name → risk_type
+        risk_type_map = {
+            "cascade_failure": "cascade",
+            "context_leakage": "leakage",
+            "collusion_detection": "collusion",
+            "intent_drift": "drift",
+            "timeout_resilience": "timeout",
+            "blast_radius": "blast_radius",
+        }
+
+        enriched_findings: list[dict[str, Any]] = []
+        for finding in self.all_findings:
+            # Stable hash from swarm_name + test_name + title + affected_agents
+            hash_input = (
+                f"{self.swarm_name}:{finding.test_name}:"
+                f"{finding.title}:{sorted(finding.affected_agents)}"
+            )
+            finding_id = hashlib.sha256(hash_input.encode()).hexdigest()[:16]
+
+            # Resolve primary agent (first in affected_agents)
+            agent_id = finding.affected_agents[0] if finding.affected_agents else ""
+            agent_info = agent_lookup.get(agent_id, {"name": agent_id, "role": "unknown"})
+
+            # Resolve target agent (second in affected_agents, for edge findings)
+            target_id = ""
+            target_info: dict[str, str] = {"name": "", "role": ""}
+            if len(finding.affected_agents) > 1:
+                target_id = finding.affected_agents[1]
+                target_info = agent_lookup.get(target_id, {"name": target_id, "role": "unknown"})
+
+            # Edge key for edge-type findings
+            edge_key = ""
+            if agent_info["role"] and target_info["role"] and target_id:
+                edge_key = f"{agent_info['role']} → {target_info['role']}"
+
+            # Tool name from evidence if present
+            tool_name = finding.evidence.get("tool_name", "")
+
+            # Blast radius from evidence
+            blast_radius = 0.0
+            if "impact_percentage" in finding.evidence:
+                blast_radius = round(finding.evidence["impact_percentage"] / 100.0, 4)
+            elif "blast_radius" in finding.evidence:
+                blast_radius = round(float(finding.evidence["blast_radius"]), 4)
+
+            enriched_findings.append(
+                {
+                    "finding_id": finding_id,
+                    "agent_id": agent_id,
+                    "agent_name": agent_info["name"],
+                    "agent_role": agent_info["role"],
+                    "target_agent_id": target_id,
+                    "target_agent_name": target_info["name"],
+                    "target_agent_role": target_info["role"],
+                    "tool_name": tool_name,
+                    "edge_key": edge_key,
+                    "risk_type": risk_type_map.get(finding.test_name, finding.test_name),
+                    "severity": finding.severity.value,
+                    "blast_radius": blast_radius,
+                    "description": finding.description,
+                    "remediation": finding.remediation,
+                }
+            )
+
+        result = {
+            "version": "0.1.2",
+            "swarm_name": self.swarm_name,
+            "framework": self.framework,
+            "agent_count": self.agent_count,
+            "edge_count": self.edge_count,
+            "risk_score": self.risk_score,
+            "total_findings": len(enriched_findings),
+            "severity_summary": {
+                "critical": sum(1 for f in enriched_findings if f["severity"] == "critical"),
+                "high": sum(1 for f in enriched_findings if f["severity"] == "high"),
+                "medium": sum(1 for f in enriched_findings if f["severity"] == "medium"),
+                "low": sum(1 for f in enriched_findings if f["severity"] == "low"),
+                "info": sum(1 for f in enriched_findings if f["severity"] == "info"),
+            },
+            "test_results": [
+                {
+                    "test_name": r.test_name,
+                    "status": r.status.value,
+                    "findings_count": len(r.findings),
+                    "duration_ms": round(r.duration_ms, 2),
+                }
+                for r in self.test_results
+            ],
+            "findings": enriched_findings,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        if output_path:
+            with open(output_path, "w") as f:
+                json.dump(result, f, indent=2, default=str)
+
+        return result

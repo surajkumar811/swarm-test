@@ -870,3 +870,81 @@ class TestTimeoutResilienceAttack:
         for f in result.findings:
             if "No timeout handling" in f.title or "Fragile dependency" in f.title:
                 assert b.id not in f.affected_agents
+
+
+# ---------------------------------------------------------------------------
+# JSON Export tests
+# ---------------------------------------------------------------------------
+
+class TestJsonExport:
+    def _make_report(self):
+        """Helper: build a probe with 2 agents and return (report, graph)."""
+        a = AgentNode(name="Alpha", role="researcher")
+        b = AgentNode(name="Beta", role="writer")
+        probe = SwarmProbe(
+            swarm_name="json-test",
+            agents=[a, b],
+            events=[InteractionEvent(
+                source_agent_id=a.id,
+                target_agent_id=b.id,
+                event_type=EventType.TASK_DELEGATE,
+            )],
+        )
+        report = probe.run_all()
+        return report, probe.graph
+
+    def test_to_json_returns_dict(self):
+        """to_json() should return a dict with required top-level keys."""
+        report, graph = self._make_report()
+        data = report.to_json(graph=graph)
+        assert isinstance(data, dict)
+        for key in ("version", "swarm_name", "framework", "agent_count",
+                     "edge_count", "risk_score", "total_findings",
+                     "severity_summary", "test_results", "findings",
+                     "generated_at"):
+            assert key in data, f"Missing key: {key}"
+
+    def test_finding_has_all_fields(self):
+        """Each finding record should have all enriched fields."""
+        report, graph = self._make_report()
+        data = report.to_json(graph=graph)
+        required_fields = {
+            "finding_id", "agent_id", "agent_name", "agent_role",
+            "target_agent_id", "target_agent_name", "target_agent_role",
+            "tool_name", "edge_key", "risk_type", "severity",
+            "blast_radius", "description", "remediation",
+        }
+        for finding in data["findings"]:
+            assert required_fields.issubset(finding.keys()), (
+                f"Missing fields: {required_fields - finding.keys()}"
+            )
+
+    def test_stable_finding_id(self):
+        """Same swarm + finding should produce the same finding_id across runs."""
+        report, graph = self._make_report()
+        data1 = report.to_json(graph=graph)
+        data2 = report.to_json(graph=graph)
+        ids1 = [f["finding_id"] for f in data1["findings"]]
+        ids2 = [f["finding_id"] for f in data2["findings"]]
+        assert ids1 == ids2
+
+    def test_writes_to_file(self, tmp_path):
+        """to_json(output_path=...) should write valid JSON to disk."""
+        report, graph = self._make_report()
+        out = str(tmp_path / "report.json")
+        data = report.to_json(out, graph=graph)
+        import json
+        with open(out) as f:
+            loaded = json.load(f)
+        assert loaded["swarm_name"] == "json-test"
+        assert loaded["total_findings"] == data["total_findings"]
+
+    def test_risk_type_mapping(self):
+        """risk_type should map test_name to short category names."""
+        report, graph = self._make_report()
+        data = report.to_json(graph=graph)
+        valid_types = {"cascade", "leakage", "collusion", "drift", "timeout", "blast_radius"}
+        for finding in data["findings"]:
+            assert finding["risk_type"] in valid_types, (
+                f"Unexpected risk_type: {finding['risk_type']}"
+            )

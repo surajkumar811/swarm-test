@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -84,9 +83,7 @@ def probe(
         console.print(f"\n[green]HTML report saved to:[/green] {path}")
 
     if json_output:
-        data = report.model_dump(mode="json")
-        with open(json_output, "w") as f:
-            json.dump(data, f, indent=2, default=str)
+        report.to_json(json_output, graph=probe_obj.graph)
         console.print(f"[green]JSON report saved to:[/green] {json_output}")
 
     if fail_on_critical and report.all_findings:
@@ -102,8 +99,11 @@ def probe(
 @click.option("--agents", "-a", multiple=True, help="Agent names (can specify multiple)")
 @click.option("--edges", "-e", multiple=True, help="Edges as 'source:target' pairs")
 @click.option("--output", "-o", default=None, help="Output HTML report path")
+@click.option("--json-output", "-j", default=None, help="Output JSON report path")
 @click.option("--name", default="cli-swarm", show_default=True, help="Swarm name")
-def scan(agents: tuple, edges: tuple, output: str | None, name: str) -> None:
+def scan(
+    agents: tuple, edges: tuple, output: str | None, json_output: str | None, name: str
+) -> None:
     """Run a static graph scan from agent names and edge pairs without a live swarm."""
     from swarm_test.core.models import AgentNode, EventType, InteractionEvent
     from swarm_test.core.probe import SwarmProbe
@@ -148,6 +148,10 @@ def scan(agents: tuple, edges: tuple, output: str | None, name: str) -> None:
         reporter = HtmlReporter()
         path = reporter.render_with_graph(report, probe_obj.graph, output)
         console.print(f"\n[green]HTML report saved to:[/green] {path}")
+
+    if json_output:
+        report.to_json(json_output, graph=probe_obj.graph)
+        console.print(f"[green]JSON report saved to:[/green] {json_output}")
 
 
 @cli.command("version")
