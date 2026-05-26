@@ -13,29 +13,20 @@ from swarm_test.core.models import EventType, InteractionEvent
 
 logger = logging.getLogger(__name__)
 
-# Patterns considered sensitive in agent payloads
-_SENSITIVE_PATTERNS: list[re.Pattern] = [
-    re.compile(r"(?i)(password|passwd|pwd)\s*[:=]\s*\S+"),
-    re.compile(r"(?i)(api[_-]?key|apikey|token|secret)\s*[:=]\s*\S+"),
-    re.compile(r"(?i)(bearer\s+[A-Za-z0-9\-._~+/]+=*)"),
-    re.compile(r"(?i)(ssn|social.security)\s*[:=]\s*[\d\-]+"),
-    re.compile(r"(?i)(credit.?card|cc.?number)\s*[:=]\s*[\d\s\-]+"),
-    re.compile(r"\b\d{16}\b"),  # Raw 16-digit card numbers
-    re.compile(r"(?i)(private.?key|-----BEGIN)"),
-    re.compile(r"(?i)(aws.?access.?key|aws.?secret)"),
-]
-
 
 def check_sensitive_leakage(text: str) -> list[str]:
     """
     Scan text for patterns that indicate sensitive data leakage.
     Returns list of pattern descriptions that matched.
+
+    Delegates to the comprehensive SensitiveDataScanner in the
+    context_leakage attack module.
     """
-    matches = []
-    for pattern in _SENSITIVE_PATTERNS:
-        if pattern.search(text):
-            matches.append(pattern.pattern)
-    return matches
+    # Import here to avoid circular imports at module level
+    from swarm_test.attacks.context_leakage import scan_text
+
+    matches = scan_text(text)
+    return [m["pattern_type"] for m in matches]
 
 
 class AgentInterceptor:
