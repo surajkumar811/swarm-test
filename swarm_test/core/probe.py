@@ -144,6 +144,12 @@ class SwarmProbe:
             results.append(result)
 
         metrics = self.graph.summary_metrics()
+
+        # Compute per-agent health scores
+        from swarm_test.scoring.agent_health import AgentHealthScorer
+
+        agent_scores = AgentHealthScorer().score_all(self.graph)
+
         report = SwarmReport(
             swarm_name=self.swarm_name,
             framework=self._framework,
@@ -151,6 +157,7 @@ class SwarmProbe:
             edge_count=self.graph.graph.number_of_edges(),
             test_results=results,
             graph_metrics=metrics,
+            agent_scores=agent_scores,
             started_at=started,
             completed_at=datetime.now(timezone.utc),
         )

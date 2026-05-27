@@ -111,6 +111,39 @@ class ConsoleReporter:
             c.print(Panel(gm_text, title="[bold]Graph Metrics[/bold]", border_style="cyan"))
             c.print()
 
+        # Agent health scores
+        if report.agent_scores:
+            c.print(Rule("[bold cyan]Agent Health Scores[/bold cyan]"))
+            c.print()
+            health_table = Table(
+                box=box.ROUNDED,
+                show_header=True,
+                header_style="bold cyan",
+            )
+            health_table.add_column("Agent", style="bold", width=28)
+            health_table.add_column("Score", width=12, justify="center")
+            health_table.add_column("Status", width=10, justify="center")
+            health_table.add_column("Details", min_width=40)
+
+            # Sort worst to best
+            sorted_scores = sorted(report.agent_scores.values(), key=lambda s: s.score)
+            for hs in sorted_scores:
+                if hs.score >= 70:
+                    score_style = "green"
+                elif hs.score >= 40:
+                    score_style = "yellow"
+                else:
+                    score_style = "bold red"
+                reasons_str = ", ".join(hs.reasons) if hs.reasons else "no issues"
+                health_table.add_row(
+                    hs.agent_name,
+                    Text(f"{hs.score}/100", style=score_style),
+                    Text(hs.status_icon, justify="center"),
+                    Text(f"({reasons_str})", style="dim"),
+                )
+            c.print(health_table)
+            c.print()
+
         # Findings detail
         all_findings = report.all_findings
         if not all_findings:

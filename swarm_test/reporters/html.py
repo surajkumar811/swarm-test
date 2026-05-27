@@ -131,6 +131,28 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   </tbody>
 </table>
 
+{% if agent_scores %}
+<div class="section-title">Agent Health Scores</div>
+<table>
+  <thead>
+    <tr>
+      <th>Agent</th><th>Role</th><th>Score</th><th>Status</th><th>Details</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for hs in agent_scores %}
+    <tr>
+      <td>{{ hs.agent_name }}</td>
+      <td>{{ hs.role }}</td>
+      <td style="font-weight:700; color: {% if hs.score >= 70 %}#4ade80{% elif hs.score >= 40 %}#facc15{% else %}#f87171{% endif %};">{{ hs.score }}/100</td>
+      <td>{{ hs.status_icon }}</td>
+      <td style="color:var(--muted); font-size:0.85rem;">{{ hs.reasons | join(', ') }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
 {% if all_findings %}
 <div class="section-title">Findings ({{ all_findings | length }})</div>
 {% for finding in all_findings %}
@@ -260,6 +282,7 @@ class HtmlReporter:
         html = template.render(
             report=report,
             all_findings=report.all_findings,
+            agent_scores=self._sorted_scores(report),
             graph_data=graph_data,
             severity_colors=_SEVERITY_COLORS_HEX,
             risk_class=risk_class,
@@ -324,6 +347,7 @@ class HtmlReporter:
         html = template.render(
             report=report,
             all_findings=report.all_findings,
+            agent_scores=self._sorted_scores(report),
             graph_data={"nodes": nodes, "edges": edges},
             severity_colors=_SEVERITY_COLORS_HEX,
             risk_class=risk_class,
@@ -334,3 +358,10 @@ class HtmlReporter:
             f.write(html)
 
         return output_path
+
+    @staticmethod
+    def _sorted_scores(report: SwarmReport) -> list[Any]:
+        """Return agent health scores sorted worst to best."""
+        if not report.agent_scores:
+            return []
+        return sorted(report.agent_scores.values(), key=lambda s: s.score)

@@ -21,6 +21,7 @@ from swarm_test.core.interceptor import check_sensitive_leakage, AgentIntercepto
 from swarm_test.attacks.cascade import CascadeFailureAttack
 from swarm_test.attacks.blast_radius import BlastRadiusAttack
 from swarm_test.attacks.context_leakage import ContextLeakageAttack, SensitiveDataScanner, scan_text
+from swarm_test.scoring.agent_health import AgentHealthScorer, AgentHealthScore
 from swarm_test.attacks.intent_drift import IntentDriftAttack
 from swarm_test.attacks.collusion import CollusionDetectionAttack
 from swarm_test.attacks.timeout_resilience import TimeoutResilienceAttack
@@ -1119,3 +1120,147 @@ class TestSensitiveDataScanner:
         assert Severity.CRITICAL in severities  # AWS key
         # Metrics should track pattern types
         assert len(result.metrics["pattern_types_found"]) >= 2
+
+
+# ---------------------------------------------------------------------------
+# Agent Health Scoring — 6 tests
+# ---------------------------------------------------------------------------
+
+
+class TestAgentHealthScoring:
+    def test_single_agent_full_health(self):
+        """A lone agent with no edges should score 100."""
+        g = SwarmGraph()
+        g.add_agent(AgentNode(name="Solo", role="worker"))
+        scorer = AgentHealthScorer()
+        scores = scorer.score_all(g)
+        assert len(scores) == 1
+        solo = list(scores.values())[0]
+        assert solo.score == 100
+        assert solo.reasons == []
+
+    def test_spof_penalty(self):
+        """An articulation point (SPOF) should lose 30 points."""
+        g = SwarmGraph()
+        a = AgentNode(name="A", role="worker")
+        b = AgentNode(name="Bridge", role="router")
+        c = AgentNode(name="C", role="worker")
+        g.add_agent(a)
+        g.add_agent(b)
+        g.add_agent(c)
+        g.record_event(
+            InteractionEvent(
+                source_agent_id=a.id,
+                target_agent_id=b.id,
+                event_type=EventType.TASK_DELEGATE,
+            )
+        )
+        g.record_event(
+            InteractionEvent(
+                source_agent_id=b.id,
+                target_agent_id=c.id,
+                event_type=EventType.TASK_DELEGATE,
+            )
+        )
+        scores = AgentHealthScorer().score_all(g)
+        bridge_score = scores[b.id]
+        assert "SPOF" in bridge_score.reasons
+        assert bridge_score.breakdown.get("spof") == -30
+
+    def test_blast_radius_penalty(self):
+        """Hub agent with high blast radius gets penalized proportionally."""
+        g = SwarmGraph()
+        hub = AgentNode(name="Hub", role="manager")
+        g.add_agent(hub)
+        for i in range(4):
+            w = AgentNode(name=f"W{i}", role="worker")
+            g.add_agent(w)
+            g.record_event(
+                InteractionEvent(
+                    source_agent_id=hub.id,
+                    target_agent_id=w.id,
+                    event_type=EventType.TASK_DELEGATE,
+                )
+            )
+        scores = AgentHealthScorer().score_all(g)
+        hub_score = scores[hub.id]
+        # Hub has 100% blast radius → -40 penalty
+        assert hub_score.breakdown.get("blast_radius") == -40
+        assert "100% blast radius" in hub_score.reasons[0]
+
+    def test_fallback_bonus(self):
+        """Agent with multiple upstreams (in_degree >= 2) gets +10 bonus."""
+        g = SwarmGraph()
+        a = AgentNode(name="SourceA", role="data")
+        b = AgentNode(name="SourceB", role="data")
+        c = AgentNode(name="Consumer", role="processor")
+        g.add_agent(a)
+        g.add_agent(b)
+        g.add_agent(c)
+        g.record_event(
+            InteractionEvent(
+                source_agent_id=a.id,
+                target_agent_id=c.id,
+                event_type=EventType.TASK_DELEGATE,
+            )
+        )
+        g.record_event(
+            InteractionEvent(
+                source_agent_id=b.id,
+                target_agent_id=c.id,
+                event_type=EventType.TASK_DELEGATE,
+            )
+        )
+        scores = AgentHealthScorer().score_all(g)
+        consumer = scores[c.id]
+        assert consumer.breakdown.get("fallback_bonus") == 10
+        assert "has fallback upstreams" in consumer.reasons
+
+    def test_scores_in_report_and_json(self):
+        """SwarmProbe.run_all() populates agent_scores and to_json includes them."""
+        a = AgentNode(name="Alpha", role="researcher")
+        b = AgentNode(name="Beta", role="writer")
+        probe = SwarmProbe(
+            swarm_name="health-test",
+            agents=[a, b],
+            events=[
+                InteractionEvent(
+                    source_agent_id=a.id,
+                    target_agent_id=b.id,
+                    event_type=EventType.TASK_DELEGATE,
+                )
+            ],
+        )
+        report = probe.run_all()
+        assert len(report.agent_scores) == 2
+        assert a.id in report.agent_scores
+        # JSON export should include agent_health_scores
+        data = report.to_json(graph=probe.graph)
+        assert "agent_health_scores" in data
+        assert len(data["agent_health_scores"]) == 2
+        for entry in data["agent_health_scores"]:
+            assert "score" in entry
+            assert "breakdown" in entry
+
+    def test_clique_penalty(self):
+        """Agents in a dense clique get penalized."""
+        g = SwarmGraph()
+        agents = [AgentNode(name=f"C{i}", role="worker") for i in range(4)]
+        for ag in agents:
+            g.add_agent(ag)
+        # Fully connected → every agent is in a clique
+        for i, a in enumerate(agents):
+            for j, b in enumerate(agents):
+                if i != j:
+                    g.record_event(
+                        InteractionEvent(
+                            source_agent_id=a.id,
+                            target_agent_id=b.id,
+                            event_type=EventType.AGENT_CALL,
+                        )
+                    )
+        scores = AgentHealthScorer().score_all(g)
+        for ag in agents:
+            s = scores[ag.id]
+            assert s.breakdown.get("collusion_cliques", 0) < 0
+            assert any("collusion" in r for r in s.reasons)

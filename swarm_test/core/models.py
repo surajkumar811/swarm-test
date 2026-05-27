@@ -136,6 +136,7 @@ class SwarmReport(BaseModel):
     edge_count: int = 0
     test_results: list[TestResult] = Field(default_factory=list)
     graph_metrics: dict[str, Any] = Field(default_factory=dict)
+    agent_scores: dict[str, Any] = Field(default_factory=dict)
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime | None = None
 
@@ -276,6 +277,20 @@ class SwarmReport(BaseModel):
                 }
             )
 
+        # Serialize agent health scores
+        agent_scores_json: list[dict[str, Any]] = []
+        for aid, score_obj in self.agent_scores.items():
+            agent_scores_json.append(
+                {
+                    "agent_id": score_obj.agent_id,
+                    "agent_name": score_obj.agent_name,
+                    "role": score_obj.role,
+                    "score": score_obj.score,
+                    "reasons": score_obj.reasons,
+                    "breakdown": score_obj.breakdown,
+                }
+            )
+
         result = {
             "version": "0.1.2",
             "swarm_name": self.swarm_name,
@@ -291,6 +306,7 @@ class SwarmReport(BaseModel):
                 "low": sum(1 for f in enriched_findings if f["severity"] == "low"),
                 "info": sum(1 for f in enriched_findings if f["severity"] == "info"),
             },
+            "agent_health_scores": agent_scores_json,
             "test_results": [
                 {
                     "test_name": r.test_name,
