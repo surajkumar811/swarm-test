@@ -292,7 +292,7 @@ class SwarmReport(BaseModel):
             )
 
         result = {
-            "version": "0.1.2",
+            "version": "0.2.0",
             "swarm_name": self.swarm_name,
             "framework": self.framework,
             "agent_count": self.agent_count,
