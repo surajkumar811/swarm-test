@@ -22,6 +22,7 @@ from swarm_test.attacks.cascade import CascadeFailureAttack
 from swarm_test.attacks.blast_radius import BlastRadiusAttack
 from swarm_test.attacks.context_leakage import ContextLeakageAttack, SensitiveDataScanner, scan_text
 from swarm_test.scoring.agent_health import AgentHealthScorer, AgentHealthScore
+from swarm_test.comparison import ReportComparator, ChangeType
 from swarm_test.attacks.intent_drift import IntentDriftAttack
 from swarm_test.attacks.collusion import CollusionDetectionAttack
 from swarm_test.attacks.timeout_resilience import TimeoutResilienceAttack
@@ -1264,3 +1265,105 @@ class TestAgentHealthScoring:
             s = scores[ag.id]
             assert s.breakdown.get("collusion_cliques", 0) < 0
             assert any("collusion" in r for r in s.reasons)
+
+
+# ---------------------------------------------------------------------------
+# Report Comparison — 6 tests
+# ---------------------------------------------------------------------------
+
+
+class TestReportComparison:
+    @staticmethod
+    def _make_report(
+        risk_score=50,
+        total_findings=10,
+        critical=3,
+        high=4,
+        agent_scores=None,
+        findings=None,
+        test_results=None,
+        swarm_name="test-swarm",
+    ):
+        return {
+            "swarm_name": swarm_name,
+            "risk_score": risk_score,
+            "total_findings": total_findings,
+            "severity_summary": {"critical": critical, "high": high, "medium": 2, "low": 1},
+            "agent_health_scores": agent_scores or [],
+            "findings": findings or [],
+            "test_results": test_results or [],
+        }
+
+    def test_improved_risk_score(self):
+        """Lower risk score after should be marked IMPROVED."""
+        before = self._make_report(risk_score=80)
+        after = self._make_report(risk_score=50)
+        result = ReportComparator().compare(before, after)
+        risk_delta = result.metric_deltas[0]
+        assert risk_delta.name == "Risk Score"
+        assert risk_delta.change_type == ChangeType.IMPROVED
+
+    def test_regressed_findings(self):
+        """More findings after should be marked REGRESSED."""
+        before = self._make_report(total_findings=5)
+        after = self._make_report(total_findings=12)
+        result = ReportComparator().compare(before, after)
+        findings_delta = result.metric_deltas[1]
+        assert findings_delta.name == "Total Findings"
+        assert findings_delta.change_type == ChangeType.REGRESSED
+
+    def test_unchanged_metric(self):
+        """Same values should be UNCHANGED."""
+        before = self._make_report(risk_score=60)
+        after = self._make_report(risk_score=60)
+        result = ReportComparator().compare(before, after)
+        risk_delta = result.metric_deltas[0]
+        assert risk_delta.change_type == ChangeType.UNCHANGED
+
+    def test_new_and_resolved_findings(self):
+        """Findings present only in after = NEW, only in before = RESOLVED."""
+        before = self._make_report(
+            findings=[
+                {"finding_id": "aaa", "severity": "high", "description": "old issue"},
+                {"finding_id": "bbb", "severity": "critical", "description": "shared"},
+            ]
+        )
+        after = self._make_report(
+            findings=[
+                {"finding_id": "bbb", "severity": "critical", "description": "shared"},
+                {"finding_id": "ccc", "severity": "medium", "description": "new issue"},
+            ]
+        )
+        result = ReportComparator().compare(before, after)
+        assert len(result.new_findings) == 1
+        assert result.new_findings[0]["finding_id"] == "ccc"
+        assert len(result.resolved_findings) == 1
+        assert result.resolved_findings[0]["finding_id"] == "aaa"
+
+    def test_agent_score_delta(self):
+        """Agent health score improvement should be tracked."""
+        before = self._make_report(
+            agent_scores=[
+                {"agent_name": "Hub", "score": 20},
+                {"agent_name": "Worker", "score": 80},
+            ]
+        )
+        after = self._make_report(
+            agent_scores=[
+                {"agent_name": "Hub", "score": 55},
+                {"agent_name": "Worker", "score": 80},
+            ]
+        )
+        result = ReportComparator().compare(before, after)
+        hub_delta = [d for d in result.agent_deltas if "Hub" in d.name][0]
+        assert hub_delta.change_type == ChangeType.IMPROVED
+        worker_delta = [d for d in result.agent_deltas if "Worker" in d.name][0]
+        assert worker_delta.change_type == ChangeType.UNCHANGED
+
+    def test_overall_counts(self):
+        """improved_count and regressed_count should reflect all deltas."""
+        before = self._make_report(risk_score=90, total_findings=20, critical=10, high=5)
+        after = self._make_report(risk_score=40, total_findings=8, critical=2, high=3)
+        result = ReportComparator().compare(before, after)
+        assert result.improved_count >= 3  # risk, total, critical all improved
+        assert result.regressed_count == 0

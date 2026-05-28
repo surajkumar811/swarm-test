@@ -154,6 +154,25 @@ def scan(
         console.print(f"[green]JSON report saved to:[/green] {json_output}")
 
 
+@cli.command("compare")
+@click.argument("before", type=click.Path(exists=True))
+@click.argument("after", type=click.Path(exists=True))
+def compare(before: str, after: str) -> None:
+    """Compare two JSON reports and show what improved, regressed, or changed."""
+    from swarm_test.comparison import ReportComparator, load_report
+
+    try:
+        before_data = load_report(before)
+        after_data = load_report(after)
+    except Exception as exc:
+        console.print(f"[red]Failed to load reports: {exc}[/red]")
+        sys.exit(1)
+
+    comparator = ReportComparator()
+    result = comparator.compare(before_data, after_data)
+    comparator.print_comparison(result, console)
+
+
 @cli.command("version")
 def version_cmd() -> None:
     """Print version information."""
