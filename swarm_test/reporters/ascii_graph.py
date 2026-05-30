@@ -1,18 +1,39 @@
-"""ASCII agent interaction graph renderer using Rich."""
+"""ASCII agent interaction graph renderer using Rich and box-drawing characters."""
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
 
-from rich import box
+import networkx as nx
 from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
+
+
+def _score_style(score: int) -> str:
+    """Return Rich markup color tag for a health score."""
+    if score >= 60:
+        return "green"
+    if score >= 30:
+        return "yellow"
+    return "red"
 
 
 class AsciiGraphRenderer:
-    """Renders agent interaction topology as a Rich table with graph annotations."""
+    """Renders the agent interaction graph as a wire-diagram in the terminal.
+
+    Produces output like::
+
+        Agent Interaction Graph
+        ━━━━━━━━━━━━━━━━━━━━━━
+
+        [Researcher 36/100] ──→ [Analyst 60/100] ──→ [Writer 56/100]
+              ↑                                           │
+              └──────────── [Reviewer 52/100] ←───────────┘
+
+        ⚠  SPOFs: Researcher
+        ↻  Cycles: Writer → Reviewer → Writer
+        ⟿  Critical Path: Researcher → Analyst → Writer → Reviewer (4 hops)
+    """
 
     def __init__(self, console: Console | None = None) -> None:
         self.console = console or Console(highlight=False)
@@ -22,192 +43,196 @@ class AsciiGraphRenderer:
         graph: Any,
         agent_scores: dict[str, Any] | None = None,
     ) -> None:
-        """Print the agent interaction graph to the terminal.
-
-        Args:
-            graph: A ``SwarmGraph`` instance.
-            agent_scores: Optional dict of agent_id -> AgentHealthScore.
-        """
+        """Print the agent interaction graph to the terminal."""
         c = self.console
-        g = graph.graph  # The underlying NetworkX MultiDiGraph
+        g: nx.MultiDiGraph = graph.graph
         agent_scores = agent_scores or {}
 
         if g.number_of_nodes() == 0:
             c.print("[yellow]No agents in graph.[/yellow]")
             return
 
-        # Precompute graph analysis
+        # -- Precompute analysis ----------------------------------------
         spofs = set(graph.find_single_points_of_failure())
         cycles = graph.find_cycles()
         critical_path = graph.get_critical_path()
 
-        # Build blast radius lookup
         blast_radius: dict[str, float] = {}
         for nid in g.nodes:
             br = graph.get_blast_radius(nid)
             blast_radius[nid] = br["impact_percentage"]
 
-        # Build edge map: (src, dst) -> list of event types
-        edge_map: dict[tuple[str, str], list[str]] = {}
-        for src, dst, data in g.edges(data=True):
-            key = (src, dst)
-            etype = data.get("event_type", "?")
-            edge_map.setdefault(key, []).append(etype)
+        # Edge map: (src, dst) -> count
+        edge_count: dict[tuple[str, str], int] = defaultdict(int)
+        for src, dst, _data in g.edges(data=True):
+            edge_count[(src, dst)] += 1
 
-        # Bidirectional detection
-        bidir_pairs: set[frozenset[str]] = set()
-        for src, dst in edge_map:
-            if (dst, src) in edge_map:
-                bidir_pairs.add(frozenset([src, dst]))
+        bidir: set[frozenset[str]] = set()
+        for src, dst in edge_count:
+            if (dst, src) in edge_count:
+                bidir.add(frozenset([src, dst]))
 
-        # Header
+        # -- Header -----------------------------------------------------
         c.print()
-        c.print(Panel(
-            "[bold]Agent Interaction Graph[/bold]",
-            border_style="blue",
-            expand=False,
-        ))
+        c.print("  [bold blue]Agent Interaction Graph[/bold blue]")
+        c.print("  [blue]━━━━━━━━━━━━━━━━━━━━━━[/blue]")
         c.print()
 
-        # Node table
-        node_table = Table(
-            title="Agents",
-            box=box.ROUNDED,
-            show_header=True,
-            header_style="bold magenta",
-        )
-        node_table.add_column("Agent", style="bold", width=24)
-        node_table.add_column("Role", width=14)
-        node_table.add_column("Health", width=10, justify="center")
-        node_table.add_column("Blast %", width=10, justify="center")
-        node_table.add_column("Flags", width=12)
+        # -- Determine layout order -------------------------------------
+        if critical_path and len(critical_path) > 1:
+            main_row = list(critical_path)
+        else:
+            simple_g = nx.DiGraph(g)
+            try:
+                main_row = list(nx.topological_sort(simple_g))
+            except nx.NetworkXUnfeasible:
+                main_row = list(g.nodes)
 
-        for nid, data in g.nodes(data=True):
-            name = data.get("name", nid)
-            role = data.get("role", "unknown")
+        main_set = set(main_row)
+        extra_nodes = [n for n in g.nodes if n not in main_set]
 
-            # Health score
+        # -- Helper: build node label -----------------------------------
+        def _label(nid: str) -> str:
+            name = g.nodes[nid].get("name", nid)
             score_obj = agent_scores.get(nid)
+            parts = [name]
             if score_obj is not None:
-                score = score_obj.score
-                if score >= 60:
-                    health_text = Text(f"{score}/100", style="green")
-                elif score >= 30:
-                    health_text = Text(f"{score}/100", style="yellow")
-                else:
-                    health_text = Text(f"{score}/100", style="bold red")
-            else:
-                health_text = Text("-", style="dim")
-
-            # Blast radius
+                parts.append(f"{score_obj.score}/100")
             br_val = blast_radius.get(nid, 0.0)
-            if br_val >= 50:
-                br_text = Text(f"{br_val:.0f}%", style="bold red")
-            elif br_val >= 25:
-                br_text = Text(f"{br_val:.0f}%", style="yellow")
-            else:
-                br_text = Text(f"{br_val:.0f}%", style="green")
-
-            # Flags
-            flags = []
+            parts.append(f"{br_val:.0f}%")
             if nid in spofs:
-                flags.append("SPOF")
-            if g.in_degree(nid) == 0:
-                flags.append("ROOT")
-            if g.out_degree(nid) == 0:
-                flags.append("LEAF")
-            flags_text = Text(", ".join(flags), style="red" if "SPOF" in flags else "dim")
+                parts.append("⚠")
+            return " ".join(parts)
 
-            node_table.add_row(name, role, health_text, br_text, flags_text)
+        def _markup(nid: str) -> str:
+            score_obj = agent_scores.get(nid)
+            score = score_obj.score if score_obj else None
+            color = _score_style(score) if score is not None else "white"
+            return f"[{color}]\\[{_label(nid)}][/{color}]"
 
-        c.print(node_table)
-        c.print()
+        # -- Draw main pipeline -----------------------------------------
+        # Row 1: nodes connected by arrows
+        row_parts: list[str] = []
+        plain_parts: list[str] = []  # for width calculations
+        node_centers: dict[str, int] = {}
+        pos = 0
 
-        # Edge table with arrows
-        edge_table = Table(
-            title="Edges",
-            box=box.ROUNDED,
-            show_header=True,
-            header_style="bold cyan",
-        )
-        edge_table.add_column("Source", style="bold", width=20)
-        edge_table.add_column("", width=5, justify="center")
-        edge_table.add_column("Target", style="bold", width=20)
-        edge_table.add_column("Type", width=16)
-        edge_table.add_column("Count", width=8, justify="center")
+        for i, nid in enumerate(main_row):
+            label = f"[{_label(nid)}]"
+            node_centers[nid] = pos + len(label) // 2
+            row_parts.append(_markup(nid))
+            plain_parts.append(label)
+            pos += len(label)
 
-        shown_bidir: set[frozenset[str]] = set()
-        for (src, dst), etypes in sorted(edge_map.items()):
+            if i < len(main_row) - 1:
+                next_nid = main_row[i + 1]
+                pair = frozenset([nid, next_nid])
+                if pair in bidir:
+                    arr_mk = " [yellow]↔[/yellow] "
+                    arr_pl = " ↔ "
+                else:
+                    arr_mk = " [green]──→[/green] "
+                    arr_pl = " ──→ "
+                row_parts.append(arr_mk)
+                plain_parts.append(arr_pl)
+                pos += len(arr_pl)
+
+        c.print(f"  {''.join(row_parts)}")
+
+        # -- Find back-edges (not on main pipeline) --------------------
+        main_edges: set[tuple[str, str]] = set()
+        for i in range(len(main_row) - 1):
+            main_edges.add((main_row[i], main_row[i + 1]))
+
+        back_edges: list[tuple[str, str]] = []
+        for (src, dst) in edge_count:
+            if (src, dst) in main_edges:
+                continue
+            if (dst, src) in main_edges and frozenset([src, dst]) in bidir:
+                continue
+            back_edges.append((src, dst))
+
+        # -- Draw back-edge loops below the main row -------------------
+        for src, dst in back_edges:
             src_name = g.nodes[src].get("name", src)
             dst_name = g.nodes[dst].get("name", dst)
-            pair = frozenset([src, dst])
 
-            if pair in bidir_pairs:
-                if pair in shown_bidir:
-                    continue
-                shown_bidir.add(pair)
-                arrow = Text("<->", style="bold yellow")
+            if src in node_centers and dst in node_centers:
+                # Both on main row — draw a U-shaped connector
+                left_pos = min(node_centers[src], node_centers[dst])
+                right_pos = max(node_centers[src], node_centers[dst])
+                # Vertical ticks
+                vert_line = [" "] * (right_pos + 3)
+                vert_line[left_pos + 2] = "│"
+                vert_line[right_pos + 2] = "│"
+                c.print(f"  [dim]{''.join(vert_line)}[/dim]")
+                # Horizontal connector with label
+                conn = [" "] * (left_pos + 2)
+                conn.append("└")
+                mid_width = max(0, right_pos - left_pos - 1)
+                # Place label in the middle of the connector
+                label = f" {src_name} → {dst_name} "
+                if mid_width > len(label) + 2:
+                    pad_left = (mid_width - len(label)) // 2
+                    pad_right = mid_width - len(label) - pad_left
+                    conn_str = "─" * pad_left + label + "─" * pad_right
+                else:
+                    conn_str = "─" * mid_width
+                conn.append(conn_str)
+                conn.append("┘")
+                c.print(f"  [cyan]{''.join(conn)}[/cyan]")
             else:
-                arrow = Text("-->", style="bold green")
+                # One or both off the main row
+                c.print(f"  [cyan]  └── {src_name} → {dst_name}[/cyan]")
 
-            # Deduplicate event types
-            unique_types = sorted(set(etypes))
-            type_str = ", ".join(unique_types)
-            total_count = len(etypes)
-            if pair in bidir_pairs:
-                reverse_types = edge_map.get((dst, src), [])
-                total_count += len(reverse_types)
-                unique_types = sorted(set(etypes + reverse_types))
-                type_str = ", ".join(unique_types)
+        # -- Extra nodes -----------------------------------------------
+        if extra_nodes:
+            c.print()
+            extras = [_markup(nid) for nid in extra_nodes]
+            c.print(f"  [dim]Other agents:[/dim] {', '.join(extras)}")
 
-            edge_table.add_row(src_name, arrow, dst_name, type_str, str(total_count))
-
-        c.print(edge_table)
         c.print()
 
-        # Summary panel
-        summary_lines = []
-
-        # SPOFs
+        # -- Summary ---------------------------------------------------
         if spofs:
-            spof_names = [g.nodes[s].get("name", s) for s in spofs]
-            summary_lines.append(f"[bold red]SPOFs:[/bold red] {', '.join(spof_names)}")
+            names = [g.nodes[s].get("name", s) for s in spofs]
+            c.print(
+                f"  [bold red]⚠  SPOFs:[/bold red] "
+                f"[red]{', '.join(names)}[/red]"
+            )
         else:
-            summary_lines.append("[green]SPOFs:[/green] none")
+            c.print("  [green]⚠  SPOFs:[/green] [dim]none[/dim]")
 
-        # Cycles
         if cycles:
-            cycle_strs = []
-            for cycle in cycles[:5]:  # Show max 5 cycles
-                names = [g.nodes[n].get("name", n) for n in cycle]
-                cycle_strs.append(" -> ".join(names) + " -> " + names[0])
-            cycle_list = " | ".join(cycle_strs)
-            summary_lines.append(f"[yellow]Cycles ({len(cycles)}):[/yellow] {cycle_list}")
+            strs = []
+            for cy in cycles[:5]:
+                ns = [g.nodes[n].get("name", n) for n in cy]
+                strs.append(" → ".join(ns) + " → " + ns[0])
+            c.print(
+                f"  [yellow]↻  Cycles ({len(cycles)}):[/yellow] "
+                + " | ".join(strs)
+            )
         else:
-            summary_lines.append("[green]Cycles:[/green] none")
+            c.print("  [green]↻  Cycles:[/green] [dim]none[/dim]")
 
-        # Critical path
         if critical_path:
-            cp_names = [g.nodes[n].get("name", n) for n in critical_path]
-            summary_lines.append(
-                f"[cyan]Critical Path ({len(critical_path)} hops):[/cyan] "
-                + " -> ".join(cp_names)
+            ns = [g.nodes[n].get("name", n) for n in critical_path]
+            c.print(
+                f"  [cyan]⟿  Critical Path "
+                f"({len(critical_path)} hops):[/cyan] "
+                + " → ".join(ns)
             )
 
-        c.print(Panel(
-            "\n".join(summary_lines),
-            title="[bold]Topology Summary[/bold]",
-            border_style="blue",
-        ))
-
-        # Legend
+        # -- Legend ----------------------------------------------------
         c.print()
         c.print(
-            "[dim]Legend: "
-            "[green]-->  one-way edge[/green]  "
-            "[yellow]<->  bidirectional[/yellow]  "
-            "[red]SPOF  single point of failure[/red]  "
-            "ROOT  no incoming  "
-            "LEAF  no outgoing[/dim]"
+            "  [dim]Legend: "
+            "[green]──→[/green] one-way  "
+            "[cyan]←──[/cyan] reverse  "
+            "[yellow]↔[/yellow] bidirectional  "
+            "[red]RED[/red] <30  "
+            "[yellow]YELLOW[/yellow] 30-60  "
+            "[green]GREEN[/green] 60+  "
+            "[red]⚠[/red] SPOF[/dim]"
         )
         c.print()

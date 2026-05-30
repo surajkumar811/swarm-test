@@ -1419,6 +1419,7 @@ class TestAsciiGraphRenderer:
         assert "Alpha" in output
         assert "Beta" in output
         assert "Gamma" in output
+        assert "Agent Interaction Graph" in output
 
     def test_spof_detection_in_output(self):
         """SPOFs should be labeled in the output."""
@@ -1433,10 +1434,11 @@ class TestAsciiGraphRenderer:
         renderer = AsciiGraphRenderer(console=Console(file=buf, highlight=False))
         renderer.render(g)
         output = buf.getvalue()
+        # Beta is the articulation point (SPOF) in Alpha->Beta->Gamma
         assert "SPOF" in output
 
     def test_bidirectional_edge(self):
-        """Bidirectional edges should show <-> arrow."""
+        """Bidirectional edges should show the bidirectional arrow."""
         from io import StringIO
 
         from rich.console import Console
@@ -1456,7 +1458,8 @@ class TestAsciiGraphRenderer:
         renderer = AsciiGraphRenderer(console=Console(file=buf, highlight=False))
         renderer.render(g)
         output = buf.getvalue()
-        assert "<->" in output
+        # Should contain the bidirectional arrow symbol
+        assert "\u2194" in output  # ↔
 
     def test_print_graph_method(self):
         """SwarmReport.print_graph() should delegate to AsciiGraphRenderer."""
