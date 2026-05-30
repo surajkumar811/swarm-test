@@ -179,6 +179,15 @@ class SwarmReport(BaseModel):
         reporter = ConsoleReporter()
         reporter.render(self)
 
+    def print_graph(self, *, graph: Any = None) -> None:
+        """Print ASCII agent interaction graph to console."""
+        from swarm_test.reporters.ascii_graph import AsciiGraphRenderer
+
+        if graph is None:
+            return
+        renderer = AsciiGraphRenderer()
+        renderer.render(graph, agent_scores=self.agent_scores)
+
     def to_html(self, output_path: str = "swarm_report.html") -> str:
         """Export report as HTML with D3 graph."""
         from swarm_test.reporters.html import HtmlReporter

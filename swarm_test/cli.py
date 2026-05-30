@@ -34,6 +34,12 @@ def cli() -> None:
     default=False,
     help="Exit with code 1 if CRITICAL findings exist",
 )
+@click.option(
+    "--graph",
+    is_flag=True,
+    default=False,
+    help="Print ASCII agent interaction graph after the report",
+)
 def probe(
     script: str,
     output: str | None,
@@ -41,6 +47,7 @@ def probe(
     swarm_var: str,
     name: str | None,
     fail_on_critical: bool,
+    graph: bool,
 ) -> None:
     """Load a Python SCRIPT, extract the swarm object, and run all reliability tests."""
     import importlib.util
@@ -74,6 +81,9 @@ def probe(
     )
     report = probe_obj.run_all()
     report.print_summary()
+
+    if graph:
+        report.print_graph(graph=probe_obj.graph)
 
     if output:
         from swarm_test.reporters.html import HtmlReporter

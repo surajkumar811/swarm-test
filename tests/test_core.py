@@ -1367,3 +1367,102 @@ class TestReportComparison:
         result = ReportComparator().compare(before, after)
         assert result.improved_count >= 3  # risk, total, critical all improved
         assert result.regressed_count == 0
+
+
+# ---------------------------------------------------------------------------
+# ASCII Graph Renderer
+# ---------------------------------------------------------------------------
+
+
+class TestAsciiGraphRenderer:
+    """Tests for swarm_test.reporters.ascii_graph.AsciiGraphRenderer."""
+
+    def _build_graph(self):
+        """Build a small graph for testing."""
+        from swarm_test.core.graph import SwarmGraph
+
+        g = SwarmGraph()
+        a = AgentNode(name="Alpha", role="manager")
+        b = AgentNode(name="Beta", role="worker")
+        c = AgentNode(name="Gamma", role="analyst")
+        for agent in [a, b, c]:
+            g.add_agent(agent)
+        g.record_event(
+            InteractionEvent(
+                source_agent_id=a.id,
+                target_agent_id=b.id,
+                event_type=EventType.TASK_DELEGATE,
+            )
+        )
+        g.record_event(
+            InteractionEvent(
+                source_agent_id=b.id,
+                target_agent_id=c.id,
+                event_type=EventType.TASK_DELEGATE,
+            )
+        )
+        return g, a, b, c
+
+    def test_render_runs_without_error(self):
+        """Renderer should not raise on a valid graph."""
+        from io import StringIO
+
+        from rich.console import Console
+
+        from swarm_test.reporters.ascii_graph import AsciiGraphRenderer
+
+        g, *_ = self._build_graph()
+        buf = StringIO()
+        renderer = AsciiGraphRenderer(console=Console(file=buf, highlight=False))
+        renderer.render(g)
+        output = buf.getvalue()
+        assert "Alpha" in output
+        assert "Beta" in output
+        assert "Gamma" in output
+
+    def test_spof_detection_in_output(self):
+        """SPOFs should be labeled in the output."""
+        from io import StringIO
+
+        from rich.console import Console
+
+        from swarm_test.reporters.ascii_graph import AsciiGraphRenderer
+
+        g, *_ = self._build_graph()
+        buf = StringIO()
+        renderer = AsciiGraphRenderer(console=Console(file=buf, highlight=False))
+        renderer.render(g)
+        output = buf.getvalue()
+        assert "SPOF" in output
+
+    def test_bidirectional_edge(self):
+        """Bidirectional edges should show <-> arrow."""
+        from io import StringIO
+
+        from rich.console import Console
+
+        from swarm_test.reporters.ascii_graph import AsciiGraphRenderer
+
+        g, a, b, _ = self._build_graph()
+        # Add reverse edge to make A <-> B
+        g.record_event(
+            InteractionEvent(
+                source_agent_id=b.id,
+                target_agent_id=a.id,
+                event_type=EventType.AGENT_RESPONSE,
+            )
+        )
+        buf = StringIO()
+        renderer = AsciiGraphRenderer(console=Console(file=buf, highlight=False))
+        renderer.render(g)
+        output = buf.getvalue()
+        assert "<->" in output
+
+    def test_print_graph_method(self):
+        """SwarmReport.print_graph() should delegate to AsciiGraphRenderer."""
+        g, *_ = self._build_graph()
+        report = SwarmReport(swarm_name="test", agent_count=3, edge_count=2)
+        # Should not raise even without graph
+        report.print_graph()
+        # Should work with graph
+        report.print_graph(graph=g)
