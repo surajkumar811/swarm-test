@@ -54,7 +54,7 @@ jobs:
 
       - name: Install linting tools
         run: |
-          pip install "ruff>=0.15,<1" "black>=24,<27" "mypy>=1.7,<3"
+          pip install "ruff==0.15.12" "black>=24,<27" "mypy>=1.7,<3"
 
       - name: Run ruff
         run: ruff check swarm_test/

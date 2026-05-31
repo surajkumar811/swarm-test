@@ -77,13 +77,25 @@ class AsciiGraphRenderer:
 
         if n_nodes > 5 and hub_degree >= n_nodes - 1:
             self._render_hub_spoke(
-                c, g, hub_id, agent_scores, blast_radius,
-                spofs, edge_count, bidir,
+                c,
+                g,
+                hub_id,
+                agent_scores,
+                blast_radius,
+                spofs,
+                edge_count,
+                bidir,
             )
         else:
             self._render_pipeline(
-                c, g, agent_scores, blast_radius,
-                spofs, edge_count, bidir, critical_path,
+                c,
+                g,
+                agent_scores,
+                blast_radius,
+                spofs,
+                edge_count,
+                bidir,
+                critical_path,
             )
 
         c.print()
@@ -134,14 +146,13 @@ class AsciiGraphRenderer:
     # Hub-and-spoke layout (for star topologies like ARE)
     # ------------------------------------------------------------------
 
-    def _render_hub_spoke(self, c, g, hub_id, agent_scores,
-                          blast_radius, spofs, edge_count, bidir):
+    def _render_hub_spoke(self, c, g, hub_id, agent_scores, blast_radius, spofs, edge_count, bidir):
         """Render a star topology with the hub in the center."""
         hub_mk = self._markup(g, hub_id, agent_scores, blast_radius, spofs)
 
         # Classify spokes by direction
-        outbound = []   # hub -> spoke (one-way)
-        inbound = []    # spoke -> hub (one-way)
+        outbound = []  # hub -> spoke (one-way)
+        inbound = []  # spoke -> hub (one-way)
         both_dirs = []  # hub <-> spoke
 
         all_spokes = set()
@@ -160,7 +171,7 @@ class AsciiGraphRenderer:
 
         # Find non-hub edges (spoke-to-spoke)
         cross_edges = []
-        for (src, dst) in edge_count:
+        for src, dst in edge_count:
             if src != hub_id and dst != hub_id:
                 cross_edges.append((src, dst))
 
@@ -175,10 +186,7 @@ class AsciiGraphRenderer:
                 mk = self._markup(g, nid, agent_scores, blast_radius, spofs)
                 cnt = edge_count.get((hub_id, nid), 0)
                 cnt += edge_count.get((nid, hub_id), 0)
-                c.print(
-                    f"  [yellow]    ↔[/yellow]  {mk}"
-                    f"  [dim]({cnt} events)[/dim]"
-                )
+                c.print(f"  [yellow]    ↔[/yellow]  {mk}" f"  [dim]({cnt} events)[/dim]")
 
         # Outbound only
         if outbound:
@@ -186,10 +194,7 @@ class AsciiGraphRenderer:
             for nid in outbound:
                 mk = self._markup(g, nid, agent_scores, blast_radius, spofs)
                 cnt = edge_count.get((hub_id, nid), 0)
-                c.print(
-                    f"  [green]    ──→[/green]  {mk}"
-                    f"  [dim]({cnt} events)[/dim]"
-                )
+                c.print(f"  [green]    ──→[/green]  {mk}" f"  [dim]({cnt} events)[/dim]")
 
         # Inbound only
         if inbound:
@@ -197,10 +202,7 @@ class AsciiGraphRenderer:
             for nid in inbound:
                 mk = self._markup(g, nid, agent_scores, blast_radius, spofs)
                 cnt = edge_count.get((nid, hub_id), 0)
-                c.print(
-                    f"  [cyan]    ←──[/cyan]  {mk}"
-                    f"  [dim]({cnt} events)[/dim]"
-                )
+                c.print(f"  [cyan]    ←──[/cyan]  {mk}" f"  [dim]({cnt} events)[/dim]")
 
         # Cross-edges (spoke-to-spoke, bypassing hub)
         if cross_edges:
@@ -215,20 +217,17 @@ class AsciiGraphRenderer:
                 dst_name = self._name(g, dst)
                 if pair in bidir:
                     shown.add(pair)
-                    c.print(
-                        f"  [yellow]    {src_name} ↔ {dst_name}[/yellow]"
-                    )
+                    c.print(f"  [yellow]    {src_name} ↔ {dst_name}[/yellow]")
                 else:
-                    c.print(
-                        f"  [cyan]    {src_name} ──→ {dst_name}[/cyan]"
-                    )
+                    c.print(f"  [cyan]    {src_name} ──→ {dst_name}[/cyan]")
 
     # ------------------------------------------------------------------
     # Pipeline layout (for linear / DAG topologies)
     # ------------------------------------------------------------------
 
-    def _render_pipeline(self, c, g, agent_scores, blast_radius,
-                         spofs, edge_count, bidir, critical_path):
+    def _render_pipeline(
+        self, c, g, agent_scores, blast_radius, spofs, edge_count, bidir, critical_path
+    ):
         """Render a linear pipeline based on critical path / topo sort."""
         if critical_path and len(critical_path) > 1:
             main_row = list(critical_path)
@@ -250,9 +249,7 @@ class AsciiGraphRenderer:
         for i, nid in enumerate(main_row):
             label = f"[{self._label(g, nid, agent_scores, blast_radius, spofs)}]"
             node_centers[nid] = plain_len + len(label) // 2
-            row_parts.append(
-                self._markup(g, nid, agent_scores, blast_radius, spofs)
-            )
+            row_parts.append(self._markup(g, nid, agent_scores, blast_radius, spofs))
             plain_len += len(label)
 
             if i < len(main_row) - 1:
@@ -272,7 +269,7 @@ class AsciiGraphRenderer:
             main_edges.add((main_row[i], main_row[i + 1]))
 
         back_edges = []
-        for (src, dst) in edge_count:
+        for src, dst in edge_count:
             if (src, dst) in main_edges:
                 continue
             if (dst, src) in main_edges and frozenset([src, dst]) in bidir:
@@ -306,10 +303,7 @@ class AsciiGraphRenderer:
 
         if extra_nodes:
             c.print()
-            extras = [
-                self._markup(g, n, agent_scores, blast_radius, spofs)
-                for n in extra_nodes
-            ]
+            extras = [self._markup(g, n, agent_scores, blast_radius, spofs) for n in extra_nodes]
             c.print(f"  [dim]Other agents:[/dim] {', '.join(extras)}")
 
     # ------------------------------------------------------------------
@@ -319,10 +313,7 @@ class AsciiGraphRenderer:
     def _render_summary(self, c, g, spofs, cycles, critical_path):
         if spofs:
             names = [self._name(g, s) for s in spofs]
-            c.print(
-                f"  [bold red]⚠  SPOFs:[/bold red] "
-                f"[red]{', '.join(names)}[/red]"
-            )
+            c.print(f"  [bold red]⚠  SPOFs:[/bold red] " f"[red]{', '.join(names)}[/red]")
         else:
             c.print("  [green]⚠  SPOFs:[/green] [dim]none[/dim]")
 
@@ -331,10 +322,7 @@ class AsciiGraphRenderer:
             for cy in cycles[:5]:
                 ns = [self._name(g, n) for n in cy]
                 strs.append(" → ".join(ns) + " → " + ns[0])
-            c.print(
-                f"  [yellow]↻  Cycles ({len(cycles)}):[/yellow] "
-                + " | ".join(strs)
-            )
+            c.print(f"  [yellow]↻  Cycles ({len(cycles)}):[/yellow] " + " | ".join(strs))
         else:
             c.print("  [green]↻  Cycles:[/green] [dim]none[/dim]")
 
@@ -342,6 +330,5 @@ class AsciiGraphRenderer:
             ns = [self._name(g, n) for n in critical_path]
             c.print(
                 f"  [cyan]⟿  Critical Path "
-                f"({len(critical_path)} hops):[/cyan] "
-                + " → ".join(ns)
+                f"({len(critical_path)} hops):[/cyan] " + " → ".join(ns)
             )
