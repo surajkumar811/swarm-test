@@ -222,6 +222,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="swarm-test on the ARE (areengine) multi-agent system")
     parser.add_argument("--html", action="store_true", help="Export HTML report")
     parser.add_argument("--json", action="store_true", help="Export JSON report")
+    parser.add_argument("--graph", action="store_true", help="Print ASCII agent interaction graph")
     args = parser.parse_args()
 
     print("Building ARE (areengine.com / photopass-ai) agent graph...")
@@ -237,6 +238,9 @@ def main() -> None:
     )
     report = probe.run_all()
     report.print_summary()
+
+    if args.graph:
+        report.print_graph(graph=probe.graph)
 
     if args.html:
         from swarm_test.reporters.html import HtmlReporter
