@@ -138,7 +138,6 @@ class AsciiGraphRenderer:
                           blast_radius, spofs, edge_count, bidir):
         """Render a star topology with the hub in the center."""
         hub_mk = self._markup(g, hub_id, agent_scores, blast_radius, spofs)
-        hub_name = self._name(g, hub_id)
 
         # Classify spokes by direction
         outbound = []   # hub -> spoke (one-way)
