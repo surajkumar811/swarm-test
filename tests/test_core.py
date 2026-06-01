@@ -1469,3 +1469,123 @@ class TestAsciiGraphRenderer:
         report.print_graph()
         # Should work with graph
         report.print_graph(graph=g)
+
+
+# ---------------------------------------------------------------------------
+# Markdown Reporter
+# ---------------------------------------------------------------------------
+
+
+class TestMarkdownReporter:
+    """Tests for swarm_test.reporters.markdown.MarkdownReporter."""
+
+    def _make_report(self):
+        """Build a small report with findings and health scores."""
+        from swarm_test.scoring.agent_health import AgentHealthScore
+
+        report = SwarmReport(
+            swarm_name="test-swarm",
+            framework="static",
+            agent_count=3,
+            edge_count=4,
+            graph_metrics={
+                "node_count": 3,
+                "edge_count": 4,
+                "density": 0.6667,
+                "cycle_count": 1,
+                "single_points_of_failure": 1,
+                "critical_path_length": 3,
+                "is_weakly_connected": True,
+            },
+        )
+        from swarm_test.core.models import Finding, TestResult
+
+        result = TestResult(
+            test_name="cascade_failure",
+            status=TestStatus.FAILED,
+            duration_ms=1.5,
+            findings=[
+                Finding(
+                    test_name="cascade_failure",
+                    severity=Severity.CRITICAL,
+                    title="Hub is a SPOF",
+                    description="Hub failure cascades to all agents.",
+                    remediation="Add backup orchestrator.",
+                ),
+                Finding(
+                    test_name="cascade_failure",
+                    severity=Severity.HIGH,
+                    title="High blast radius",
+                    description="Worker affects 80% of agents.",
+                    remediation="Add circuit breaker.",
+                ),
+            ],
+        )
+        report.test_results.append(result)
+
+        report.agent_scores = {
+            "a1": AgentHealthScore(
+                agent_id="a1",
+                agent_name="Hub",
+                role="manager",
+                score=25,
+                reasons=["SPOF penalty"],
+                breakdown={"spof": -30},
+            ),
+            "a2": AgentHealthScore(
+                agent_id="a2",
+                agent_name="Worker",
+                role="worker",
+                score=85,
+                reasons=[],
+                breakdown={},
+            ),
+        }
+        return report
+
+    def test_render_string_contains_header(self):
+        """Markdown should contain the swarm name and summary table."""
+        from swarm_test.reporters.markdown import MarkdownReporter
+
+        report = self._make_report()
+        md = MarkdownReporter().render_string(report)
+        assert "# " in md
+        assert "test-swarm" in md
+        assert "| **Agents** | 3 |" in md
+        assert "| **Edges** | 4 |" in md
+
+    def test_render_string_contains_test_results(self):
+        """Markdown should contain test results table with status icons."""
+        from swarm_test.reporters.markdown import MarkdownReporter
+
+        report = self._make_report()
+        md = MarkdownReporter().render_string(report)
+        assert "## Test Results" in md
+        assert "cascade_failure" in md
+        assert "FAILED" in md
+
+    def test_render_string_contains_findings_and_health(self):
+        """Markdown should contain findings with severity badges and health scores."""
+        from swarm_test.reporters.markdown import MarkdownReporter
+
+        report = self._make_report()
+        md = MarkdownReporter().render_string(report)
+        # Findings
+        assert "Hub is a SPOF" in md
+        assert "**CRITICAL**" in md
+        assert "Remediation" in md
+        # Health scores
+        assert "## Agent Health Scores" in md
+        assert "Hub" in md
+        assert "25/100" in md
+
+    def test_render_writes_file(self, tmp_path):
+        """to_markdown() should write a .md file to disk."""
+        report = self._make_report()
+        out = str(tmp_path / "report.md")
+        path = report.to_markdown(out)
+        assert path == out
+        content = (tmp_path / "report.md").read_text()
+        assert "test-swarm" in content
+        assert "## Graph Metrics" in content
+        assert "swarm-test" in content  # footer

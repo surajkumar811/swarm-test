@@ -40,6 +40,7 @@ def cli() -> None:
     default=False,
     help="Print ASCII agent interaction graph after the report",
 )
+@click.option("--markdown", "-m", default=None, help="Output Markdown report path (e.g. report.md)")
 def probe(
     script: str,
     output: str | None,
@@ -48,6 +49,7 @@ def probe(
     name: str | None,
     fail_on_critical: bool,
     graph: bool,
+    markdown: str | None,
 ) -> None:
     """Load a Python SCRIPT, extract the swarm object, and run all reliability tests."""
     import importlib.util
@@ -95,6 +97,10 @@ def probe(
     if json_output:
         report.to_json(json_output, graph=probe_obj.graph)
         console.print(f"[green]JSON report saved to:[/green] {json_output}")
+
+    if markdown:
+        report.to_markdown(markdown)
+        console.print(f"[green]Markdown report saved to:[/green] {markdown}")
 
     if fail_on_critical and report.all_findings:
         from swarm_test.core.models import Severity

@@ -223,6 +223,7 @@ def main() -> None:
     parser.add_argument("--html", action="store_true", help="Export HTML report")
     parser.add_argument("--json", action="store_true", help="Export JSON report")
     parser.add_argument("--graph", action="store_true", help="Print ASCII agent interaction graph")
+    parser.add_argument("--markdown", action="store_true", help="Export Markdown report")
     args = parser.parse_args()
 
     print("Building ARE (areengine.com / photopass-ai) agent graph...")
@@ -246,6 +247,10 @@ def main() -> None:
         from swarm_test.reporters.html import HtmlReporter
         path = HtmlReporter().render_with_graph(report, probe.graph, "areengine_swarm_report.html")
         print(f"\nHTML report saved: {path}")
+
+    if args.markdown:
+        report.to_markdown("areengine_swarm_report.md")
+        print("Markdown report saved: areengine_swarm_report.md")
 
     if args.json:
         import json

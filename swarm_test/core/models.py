@@ -188,6 +188,13 @@ class SwarmReport(BaseModel):
         renderer = AsciiGraphRenderer()
         renderer.render(graph, agent_scores=self.agent_scores)
 
+    def to_markdown(self, output_path: str = "swarm_report.md") -> str:
+        """Export report as Markdown."""
+        from swarm_test.reporters.markdown import MarkdownReporter
+
+        reporter = MarkdownReporter()
+        return reporter.render(self, output_path)
+
     def to_html(self, output_path: str = "swarm_report.html") -> str:
         """Export report as HTML with D3 graph."""
         from swarm_test.reporters.html import HtmlReporter
