@@ -293,8 +293,10 @@ class SwarmReport(BaseModel):
                 }
             )
 
-        # Serialize agent health scores
+        # Serialize agent health scores (detailed)
         agent_scores_json: list[dict[str, Any]] = []
+        # Compact agent_health array for external integrations
+        agent_health_json: list[dict[str, Any]] = []
         for aid, score_obj in self.agent_scores.items():
             agent_scores_json.append(
                 {
@@ -306,9 +308,18 @@ class SwarmReport(BaseModel):
                     "breakdown": score_obj.breakdown,
                 }
             )
+            agent_health_json.append(
+                {
+                    "agent_id": score_obj.agent_id,
+                    "agent_name": score_obj.agent_name,
+                    "agent_role": score_obj.role,
+                    "score": score_obj.score,
+                    "source": "swarm-test",
+                }
+            )
 
         result = {
-            "version": "0.2.0",
+            "version": "0.2.2",
             "swarm_name": self.swarm_name,
             "framework": self.framework,
             "agent_count": self.agent_count,
@@ -323,6 +334,7 @@ class SwarmReport(BaseModel):
                 "info": sum(1 for f in enriched_findings if f["severity"] == "info"),
             },
             "agent_health_scores": agent_scores_json,
+            "agent_health": agent_health_json,
             "test_results": [
                 {
                     "test_name": r.test_name,

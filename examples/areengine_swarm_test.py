@@ -253,9 +253,7 @@ def main() -> None:
         print("Markdown report saved: areengine_swarm_report.md")
 
     if args.json:
-        import json
-        with open("areengine_swarm_report.json", "w") as f:
-            json.dump(report.model_dump(mode="json"), f, indent=2, default=str)
+        report.to_json("areengine_swarm_report.json", graph=probe.graph)
         print("JSON report saved: areengine_swarm_report.json")
 
 
