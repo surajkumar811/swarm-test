@@ -90,6 +90,6 @@ jobs:
       - name: Test CLI scan
         run: |
           swarm-test scan \
-            --agents ResearchAgent --agents DataAgent --agents WriterAgent \
-            --edges "ResearchAgent:DataAgent" --edges "DataAgent:WriterAgent" \
+            --agents "ResearchAgent,DataAgent,WriterAgent" \
+            --edges "ResearchAgent>DataAgent,DataAgent>WriterAgent" \
             --name "ci-test-swarm"

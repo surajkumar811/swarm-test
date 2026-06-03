@@ -112,43 +112,115 @@ def probe(
 
 
 @cli.command("scan")
-@click.option("--agents", "-a", multiple=True, help="Agent names (can specify multiple)")
-@click.option("--edges", "-e", multiple=True, help="Edges as 'source:target' pairs")
-@click.option("--output", "-o", default=None, help="Output HTML report path")
-@click.option("--json-output", "-j", default=None, help="Output JSON report path")
+@click.option(
+    "--agents",
+    "-a",
+    required=True,
+    help="Comma-separated agent names (e.g. 'Researcher,Analyst,Writer')",
+)
+@click.option(
+    "--edges",
+    "-e",
+    required=True,
+    help="Comma-separated edges: 'A>B' for one-way, 'A<>B' for bidirectional",
+)
 @click.option("--name", default="cli-swarm", show_default=True, help="Swarm name")
+@click.option("--html", default=None, help="Output HTML report path")
+@click.option("--json", "json_output", default=None, help="Output JSON report path")
+@click.option("--markdown", "-m", default=None, help="Output Markdown report path")
+@click.option(
+    "--graph",
+    is_flag=True,
+    default=False,
+    help="Print ASCII agent interaction graph",
+)
+@click.option(
+    "--fail-on",
+    type=click.Choice(["critical", "high", "medium", "low", "info"], case_sensitive=False),
+    default=None,
+    help="Exit with code 1 if findings at this severity or above exist",
+)
 def scan(
-    agents: tuple, edges: tuple, output: str | None, json_output: str | None, name: str
+    agents: str,
+    edges: str,
+    name: str,
+    html: str | None,
+    json_output: str | None,
+    markdown: str | None,
+    graph: bool,
+    fail_on: str | None,
 ) -> None:
-    """Run a static graph scan from agent names and edge pairs without a live swarm."""
-    from swarm_test.core.models import AgentNode, EventType, InteractionEvent
+    """Quick scan: test any agent topology in seconds, no Python needed.
+
+    \b
+    Examples:
+      swarm-test scan -a "Researcher,Analyst,Writer" -e "Researcher>Analyst,Analyst>Writer"
+      swarm-test scan -a "Hub,A,B,C" -e "Hub<>A,Hub<>B,Hub<>C" --html report.html
+      swarm-test scan -a "X,Y,Z" -e "X>Y,Y>Z,Z>X" --fail-on high
+    """
+    from swarm_test.core.models import AgentNode, EventType, InteractionEvent, Severity
     from swarm_test.core.probe import SwarmProbe
 
-    agent_nodes = {}
-    for ag in agents:
-        node = AgentNode(name=ag, role="unknown")
-        agent_nodes[ag] = node
+    # Parse agents
+    agent_names = [a.strip() for a in agents.split(",") if a.strip()]
+    if not agent_names:
+        console.print("[red]No agents provided.[/red]")
+        sys.exit(1)
 
-    event_list = []
-    for edge in edges:
-        if ":" not in edge:
-            console.print(
-                f"[yellow]Skipping invalid edge format '{edge}' (expected 'source:target')[/yellow]"
+    agent_nodes: dict[str, AgentNode] = {}
+    for ag in agent_names:
+        agent_nodes[ag] = AgentNode(name=ag, role="unknown")
+
+    # Parse edges
+    edge_specs = [e.strip() for e in edges.split(",") if e.strip()]
+    event_list: list[InteractionEvent] = []
+
+    def _ensure(name: str) -> AgentNode:
+        if name not in agent_nodes:
+            agent_nodes[name] = AgentNode(name=name, role="unknown")
+        return agent_nodes[name]
+
+    for spec in edge_specs:
+        if "<>" in spec:
+            parts = spec.split("<>", 1)
+            src_node = _ensure(parts[0].strip())
+            dst_node = _ensure(parts[1].strip())
+            event_list.append(
+                InteractionEvent(
+                    source_agent_id=src_node.id,
+                    target_agent_id=dst_node.id,
+                    event_type=EventType.TASK_DELEGATE,
+                    payload={"source": "cli"},
+                )
             )
-            continue
-        src_name, dst_name = edge.split(":", 1)
-        if src_name not in agent_nodes:
-            agent_nodes[src_name] = AgentNode(name=src_name, role="unknown")
-        if dst_name not in agent_nodes:
-            agent_nodes[dst_name] = AgentNode(name=dst_name, role="unknown")
-        event_list.append(
-            InteractionEvent(
-                source_agent_id=agent_nodes[src_name].id,
-                target_agent_id=agent_nodes[dst_name].id,
-                event_type=EventType.TASK_DELEGATE,
-                payload={"source": "cli"},
+            event_list.append(
+                InteractionEvent(
+                    source_agent_id=dst_node.id,
+                    target_agent_id=src_node.id,
+                    event_type=EventType.AGENT_RESPONSE,
+                    payload={"source": "cli"},
+                )
             )
-        )
+        elif ">" in spec:
+            parts = spec.split(">", 1)
+            src_node = _ensure(parts[0].strip())
+            dst_node = _ensure(parts[1].strip())
+            event_list.append(
+                InteractionEvent(
+                    source_agent_id=src_node.id,
+                    target_agent_id=dst_node.id,
+                    event_type=EventType.TASK_DELEGATE,
+                    payload={"source": "cli"},
+                )
+            )
+        else:
+            console.print(f"[yellow]Skipping invalid edge '{spec}' (use A>B or A<>B)[/yellow]")
+
+    console.print(
+        f"[bold blue]swarm-test scan[/bold blue] — "
+        f"[cyan]{len(agent_nodes)}[/cyan] agents, "
+        f"[cyan]{len(event_list)}[/cyan] edges"
+    )
 
     probe_obj = SwarmProbe(
         swarm_name=name,
@@ -158,16 +230,36 @@ def scan(
     report = probe_obj.run_all()
     report.print_summary()
 
-    if output:
+    if graph:
+        report.print_graph(graph=probe_obj.graph)
+
+    if html:
         from swarm_test.reporters.html import HtmlReporter
 
         reporter = HtmlReporter()
-        path = reporter.render_with_graph(report, probe_obj.graph, output)
-        console.print(f"\n[green]HTML report saved to:[/green] {path}")
+        path = reporter.render_with_graph(report, probe_obj.graph, html)
+        console.print(f"[green]HTML report saved to:[/green] {path}")
 
     if json_output:
         report.to_json(json_output, graph=probe_obj.graph)
         console.print(f"[green]JSON report saved to:[/green] {json_output}")
+
+    if markdown:
+        report.to_markdown(markdown)
+        console.print(f"[green]Markdown report saved to:[/green] {markdown}")
+
+    if fail_on and report.all_findings:
+        severity_order = [s.value for s in Severity]
+        threshold_idx = severity_order.index(fail_on.lower())
+        has_match = any(
+            severity_order.index(f.severity.value) <= threshold_idx for f in report.all_findings
+        )
+        if has_match:
+            console.print(
+                f"[red]Findings at {fail_on.upper()} or above detected "
+                f"— exiting with code 1[/red]"
+            )
+            sys.exit(1)
 
 
 @cli.command("compare")

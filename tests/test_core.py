@@ -1589,3 +1589,87 @@ class TestMarkdownReporter:
         assert "test-swarm" in content
         assert "## Graph Metrics" in content
         assert "swarm-test" in content  # footer
+
+
+# ---------------------------------------------------------------------------
+# CLI Scan Command
+# ---------------------------------------------------------------------------
+
+
+class TestCliScan:
+    """Tests for the 'swarm-test scan' CLI command."""
+
+    def test_basic_scan(self):
+        """Basic scan with agents and one-way edges should run without error."""
+        from click.testing import CliRunner
+
+        from swarm_test.cli import cli
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["scan", "-a", "A,B,C", "-e", "A>B,B>C"],
+        )
+        assert result.exit_code == 0
+        assert "SWARM-TEST RELIABILITY REPORT" in result.output
+
+    def test_bidirectional_edges(self):
+        """Bidirectional edges (<>) should create events in both directions."""
+        from click.testing import CliRunner
+
+        from swarm_test.cli import cli
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["scan", "-a", "X,Y", "-e", "X<>Y"],
+        )
+        assert result.exit_code == 0
+        # 2 events: X->Y and Y->X
+        assert "2 edges" in result.output
+
+    def test_auto_create_agents_from_edges(self):
+        """Agents mentioned only in edges should be auto-created."""
+        from click.testing import CliRunner
+
+        from swarm_test.cli import cli
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["scan", "-a", "Hub", "-e", "Hub>Worker,Hub>Analyst"],
+        )
+        assert result.exit_code == 0
+        # Worker and Analyst auto-created from edges
+        assert "3 agents" in result.output
+
+    def test_fail_on_severity(self):
+        """--fail-on should exit with code 1 when findings match."""
+        from click.testing import CliRunner
+
+        from swarm_test.cli import cli
+
+        runner = CliRunner()
+        # A linear chain A>B>C>D will generate cascade findings
+        result = runner.invoke(
+            cli,
+            ["scan", "-a", "A,B,C,D", "-e", "A>B,B>C,C>D", "--fail-on", "medium"],
+        )
+        assert result.exit_code == 1
+
+    def test_markdown_output(self, tmp_path):
+        """--markdown should write a .md report file."""
+        from click.testing import CliRunner
+
+        from swarm_test.cli import cli
+
+        runner = CliRunner()
+        md_path = str(tmp_path / "scan_report.md")
+        result = runner.invoke(
+            cli,
+            ["scan", "-a", "A,B,C", "-e", "A>B,B>C", "--markdown", md_path],
+        )
+        assert result.exit_code == 0
+        assert "Markdown report saved to" in result.output
+        content = (tmp_path / "scan_report.md").read_text()
+        assert "cli-swarm" in content
