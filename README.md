@@ -206,6 +206,14 @@ class MyFrameworkAdapter(BaseAdapter):
 
 ---
 
+## Integrations
+
+swarm-test exports (`agent_health` scores and structural findings) can feed runtime risk gates. Each integration has its own page under [`docs/integrations/`](docs/integrations/):
+
+- [Black_Wall](docs/integrations/blackwall.md) — pre-action risk gate; consumes `agent_health` as a downside-only prior.
+
+---
+
 ## Development
 
 ```bash
