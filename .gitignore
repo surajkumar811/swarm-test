@@ -30,6 +30,9 @@ htmlcov/
 # Claude Code
 .claude/
 
+# Project context (private)
+CONTEXT.md
+
 # IDE
 .vscode/
 .idea/

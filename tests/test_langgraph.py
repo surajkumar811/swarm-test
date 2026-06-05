@@ -8,7 +8,6 @@ from swarm_test import AgentNode, EventType, InteractionEvent, SwarmProbe
 from swarm_test.core.graph import SwarmGraph
 from swarm_test.integrations.langgraph_adapter import LangGraphAdapter
 
-
 # ---------------------------------------------------------------------------
 # Mock LangGraph objects (no langgraph dependency needed)
 # ---------------------------------------------------------------------------
