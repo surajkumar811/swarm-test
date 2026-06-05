@@ -297,9 +297,7 @@ def scan(
 @click.option("--name", default="swarm-run", show_default=True, help="Swarm name")
 @click.option(
     "--fail-on-severity",
-    type=click.Choice(
-        ["critical", "high", "medium", "low", "info", "none"], case_sensitive=False
-    ),
+    type=click.Choice(["critical", "high", "medium", "low", "info", "none"], case_sensitive=False),
     default=None,
     help="Override config: minimum severity that triggers exit code 1",
 )

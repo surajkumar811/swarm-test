@@ -164,7 +164,7 @@ class SwarmProbe:
                         logger.warning("Failed to add custom sensitive_patterns: %s", exc)
                 # Timeout config → TimeoutResilienceAttack
                 if isinstance(atk, TimeoutResilienceAttack) and timeout_seconds is not None:
-                    atk.timeout_seconds = float(timeout_seconds)
+                    setattr(atk, "timeout_seconds", float(timeout_seconds))
 
         return attacks
 

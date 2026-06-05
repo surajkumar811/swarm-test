@@ -101,8 +101,7 @@ class SwarmConfig(BaseModel):
         v_lower = v.lower()
         if v_lower not in VALID_SEVERITIES:
             raise ValueError(
-                f"fail_on_severity must be one of: "
-                f"{', '.join(VALID_SEVERITIES)} — got '{v}'"
+                f"fail_on_severity must be one of: " f"{', '.join(VALID_SEVERITIES)} — got '{v}'"
             )
         return v_lower
 
@@ -110,9 +109,7 @@ class SwarmConfig(BaseModel):
     @classmethod
     def _check_blast(cls, v: float) -> float:
         if not (0.0 <= v <= 1.0):
-            raise ValueError(
-                f"max_blast_radius must be between 0.0 and 1.0 — got {v}"
-            )
+            raise ValueError(f"max_blast_radius must be between 0.0 and 1.0 — got {v}")
         return float(v)
 
     @field_validator("output_format")
@@ -121,8 +118,7 @@ class SwarmConfig(BaseModel):
         v_lower = v.lower()
         if v_lower not in VALID_OUTPUT_FORMATS:
             raise ValueError(
-                f"output_format must be one of: "
-                f"{', '.join(VALID_OUTPUT_FORMATS)} — got '{v}'"
+                f"output_format must be one of: " f"{', '.join(VALID_OUTPUT_FORMATS)} — got '{v}'"
             )
         return v_lower
 
