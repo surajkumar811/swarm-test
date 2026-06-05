@@ -262,6 +262,246 @@ def scan(
             sys.exit(1)
 
 
+@cli.command("run")
+@click.argument(
+    "script",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False),
+    required=False,
+)
+@click.option(
+    "--config",
+    "-c",
+    "config_path",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False),
+    default=None,
+    help="Path to a YAML config file (default: auto-discover .swarmtest.yml in cwd)",
+)
+@click.option(
+    "--agents",
+    "-a",
+    default=None,
+    help="Comma-separated agent names (e.g. 'Researcher,Analyst,Writer')",
+)
+@click.option(
+    "--edges",
+    "-e",
+    default=None,
+    help="Comma-separated edges: 'A>B' for one-way, 'A<>B' for bidirectional",
+)
+@click.option(
+    "--swarm-var",
+    default="crew",
+    show_default=True,
+    help="Variable name of the swarm object in the script",
+)
+@click.option("--name", default="swarm-run", show_default=True, help="Swarm name")
+@click.option(
+    "--fail-on-severity",
+    type=click.Choice(
+        ["critical", "high", "medium", "low", "info", "none"], case_sensitive=False
+    ),
+    default=None,
+    help="Override config: minimum severity that triggers exit code 1",
+)
+@click.option(
+    "--max-blast-radius",
+    type=float,
+    default=None,
+    help="Override config: blast-radius threshold 0.0-1.0",
+)
+@click.option(
+    "--output-format",
+    type=click.Choice(["console", "json", "markdown", "html"], case_sensitive=False),
+    default=None,
+    help="Override config: output format",
+)
+@click.option(
+    "--output-path",
+    default=None,
+    help="Override config: file path for json/markdown/html output",
+)
+@click.option(
+    "--quick-scan",
+    is_flag=True,
+    default=None,
+    help="Override config: enable quick scan mode",
+)
+@click.option(
+    "--strict",
+    is_flag=True,
+    default=None,
+    help="Override config: treat any finding as a failure",
+)
+def run_cmd(
+    script: str | None,
+    config_path: str | None,
+    agents: str | None,
+    edges: str | None,
+    swarm_var: str,
+    name: str,
+    fail_on_severity: str | None,
+    max_blast_radius: float | None,
+    output_format: str | None,
+    output_path: str | None,
+    quick_scan: bool | None,
+    strict: bool | None,
+) -> None:
+    """Run swarm-test with a YAML config file (auto-discovered) plus optional CLI overrides.
+
+    \b
+    Examples:
+      swarm-test run --config .swarmtest.yml
+      swarm-test run -a "A,B,C" -e "A>B,B>C"
+      swarm-test run my_crew.py --config custom.yml --strict
+    """
+    from swarm_test.config import find_config_path, load_config, merge_cli_args
+
+    # ---- Load config ---------------------------------------------------
+    try:
+        config = load_config(path=config_path)
+    except (FileNotFoundError, ValueError) as exc:
+        console.print(f"[red]Config error: {exc}[/red]")
+        sys.exit(2)
+
+    discovered = Path(config_path) if config_path else find_config_path()
+    if discovered is not None:
+        console.print(f"[dim]Loaded config from {discovered}[/dim]")
+
+    # ---- Merge CLI overrides ------------------------------------------
+    cli_overrides: dict[str, object] = {
+        "fail_on_severity": fail_on_severity.lower() if fail_on_severity else None,
+        "max_blast_radius": max_blast_radius,
+        "output_format": output_format.lower() if output_format else None,
+        "output_path": output_path,
+        "quick_scan": quick_scan,
+        "strict": strict,
+    }
+    try:
+        config = merge_cli_args(config, cli_overrides)
+    except ValueError as exc:
+        console.print(f"[red]Config error: {exc}[/red]")
+        sys.exit(2)
+
+    # ---- Build SwarmProbe ---------------------------------------------
+    from swarm_test.core.models import AgentNode, EventType, InteractionEvent
+    from swarm_test.core.probe import SwarmProbe
+
+    probe_obj: SwarmProbe
+    if script:
+        import importlib.util
+
+        console.print(f"[bold blue]swarm-test run[/bold blue] — loading [cyan]{script}[/cyan]")
+        spec = importlib.util.spec_from_file_location("_swarm_script", script)
+        if spec is None or spec.loader is None:
+            console.print(f"[red]Cannot load script: {script}[/red]")
+            sys.exit(2)
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)  # type: ignore[union-attr]
+        except Exception as exc:
+            console.print(f"[red]Error executing script: {exc}[/red]")
+            sys.exit(2)
+        swarm = getattr(module, swarm_var, None)
+        probe_obj = SwarmProbe(
+            swarm,
+            swarm_name=name if name != "swarm-run" else Path(script).stem,
+            config=config,
+        )
+    elif agents and edges:
+        agent_nodes: dict[str, AgentNode] = {}
+        for ag in (a.strip() for a in agents.split(",") if a.strip()):
+            agent_nodes[ag] = AgentNode(name=ag, role="unknown")
+
+        def _ensure(n: str) -> AgentNode:
+            if n not in agent_nodes:
+                agent_nodes[n] = AgentNode(name=n, role="unknown")
+            return agent_nodes[n]
+
+        event_list: list[InteractionEvent] = []
+        for spec_str in (e.strip() for e in edges.split(",") if e.strip()):
+            if "<>" in spec_str:
+                parts = spec_str.split("<>", 1)
+                s_node = _ensure(parts[0].strip())
+                d_node = _ensure(parts[1].strip())
+                event_list.append(
+                    InteractionEvent(
+                        source_agent_id=s_node.id,
+                        target_agent_id=d_node.id,
+                        event_type=EventType.TASK_DELEGATE,
+                    )
+                )
+                event_list.append(
+                    InteractionEvent(
+                        source_agent_id=d_node.id,
+                        target_agent_id=s_node.id,
+                        event_type=EventType.AGENT_RESPONSE,
+                    )
+                )
+            elif ">" in spec_str:
+                parts = spec_str.split(">", 1)
+                s_node = _ensure(parts[0].strip())
+                d_node = _ensure(parts[1].strip())
+                event_list.append(
+                    InteractionEvent(
+                        source_agent_id=s_node.id,
+                        target_agent_id=d_node.id,
+                        event_type=EventType.TASK_DELEGATE,
+                    )
+                )
+        probe_obj = SwarmProbe(
+            swarm_name=name,
+            agents=list(agent_nodes.values()),
+            events=event_list,
+            config=config,
+        )
+    else:
+        console.print(
+            "[red]Provide either a SCRIPT path or both --agents and --edges to run.[/red]"
+        )
+        sys.exit(2)
+
+    # ---- Run tests -----------------------------------------------------
+    try:
+        report = probe_obj.run_all()
+    except Exception as exc:
+        console.print(f"[red]Probe failed: {exc}[/red]")
+        sys.exit(2)
+
+    # ---- Emit output ---------------------------------------------------
+    fmt = config.output_format
+    out = config.output_path
+    if fmt == "console":
+        report.print_summary()
+    elif fmt == "json":
+        report.print_summary()
+        target = out or "swarm_report.json"
+        report.to_json(target, graph=probe_obj.graph)
+        console.print(f"[green]JSON report saved to:[/green] {target}")
+    elif fmt == "markdown":
+        report.print_summary()
+        target = out or "swarm_report.md"
+        report.to_markdown(target)
+        console.print(f"[green]Markdown report saved to:[/green] {target}")
+    elif fmt == "html":
+        report.print_summary()
+        from swarm_test.reporters.html import HtmlReporter
+
+        target = out or "swarm_report.html"
+        reporter = HtmlReporter()
+        path = reporter.render_with_graph(report, probe_obj.graph, target)
+        console.print(f"[green]HTML report saved to:[/green] {path}")
+
+    # ---- Threshold check ----------------------------------------------
+    if SwarmProbe.check_thresholds(config, report):
+        console.print(
+            f"[red]Findings exceed thresholds "
+            f"(fail_on_severity={config.fail_on_severity}, "
+            f"max_blast_radius={config.max_blast_radius}) — exiting with code 1[/red]"
+        )
+        sys.exit(1)
+    sys.exit(0)
+
+
 @cli.command("compare")
 @click.argument("before", type=click.Path(exists=True))
 @click.argument("after", type=click.Path(exists=True))

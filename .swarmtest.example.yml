@@ -1,0 +1,50 @@
+# .swarmtest.example.yml
+# ------------------------------------------------------------------------------
+# Copy this file to .swarmtest.yml in your project root and edit as needed.
+# swarm-test auto-discovers .swarmtest.yml, .swarmtest.yaml, or swarmtest.yml
+# in the current working directory, falling back to [tool.swarmtest] in
+# pyproject.toml. CLI flags always override these values.
+# ------------------------------------------------------------------------------
+
+# Minimum severity that causes `swarm-test run` to exit with code 1.
+# Valid values: critical, high, medium, low, info, none
+fail_on_severity: critical
+
+# Blast-radius threshold (0.0 - 1.0). Findings whose blast_radius exceeds
+# this value will trigger failure. 1.0 disables the check.
+max_blast_radius: 1.0
+
+# Whitelist of tests to run. If null/omitted, all tests run.
+# Valid names: cascade, context_leakage, intent_drift, collusion,
+#              blast_radius, timeout, sensitive_data
+# enabled_tests:
+#   - cascade
+#   - blast_radius
+#   - context_leakage
+
+# Blacklist of tests. Applied AFTER enabled_tests.
+disabled_tests: []
+# disabled_tests:
+#   - collusion
+
+# Extra regex patterns merged with the built-in sensitive-data scanner.
+sensitive_patterns: []
+# sensitive_patterns:
+#   - "INTERNAL-[A-Z0-9]{12}"
+#   - "(?i)company_secret_[a-z0-9]+"
+
+# Output format: console, json, markdown, html
+output_format: console
+
+# File path for json/markdown/html output. Ignored when output_format=console.
+output_path: null
+# output_path: ./reports/swarm_report.html
+
+# Run in quick-scan mode (faster, fewer checks).
+quick_scan: false
+
+# Timeout (seconds) for the timeout-resilience test.
+timeout_seconds: 30.0
+
+# Treat any finding (including LOW/INFO) as a failure.
+strict: false

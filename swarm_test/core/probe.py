@@ -39,12 +39,14 @@ class SwarmProbe:
         agents: list[AgentNode] | None = None,
         events: list[InteractionEvent] | None = None,
         framework: str | None = None,
+        config: Any | None = None,
     ) -> None:
         self.swarm = swarm
         self.swarm_name = swarm_name
         self.graph = SwarmGraph()
         self._framework = framework or self._detect_framework(swarm)
         self._adapter: Any | None = None
+        self.config = config
 
         # Static graph fallback — supply agents/events directly
         if agents:
@@ -63,7 +65,7 @@ class SwarmProbe:
                 except Exception as exc:
                     logger.warning("Adapter ingest failed: %s", exc)
 
-        self._attacks: list[Any] = self._load_attacks()
+        self._attacks: list[Any] = self._load_attacks(config)
 
     # ------------------------------------------------------------------
     # Framework detection
@@ -106,7 +108,7 @@ class SwarmProbe:
             return None
 
     @staticmethod
-    def _load_attacks() -> list[Any]:
+    def _load_attacks(config: Any | None = None) -> list[Any]:
         from swarm_test.attacks.blast_radius import BlastRadiusAttack
         from swarm_test.attacks.cascade import CascadeFailureAttack
         from swarm_test.attacks.collusion import CollusionDetectionAttack
@@ -114,14 +116,57 @@ class SwarmProbe:
         from swarm_test.attacks.intent_drift import IntentDriftAttack
         from swarm_test.attacks.timeout_resilience import TimeoutResilienceAttack
 
-        return [
-            CascadeFailureAttack(),
-            ContextLeakageAttack(),
-            IntentDriftAttack(),
-            CollusionDetectionAttack(),
-            BlastRadiusAttack(),
-            TimeoutResilienceAttack(),
-        ]
+        # Short test-name → attack instance
+        all_attacks: dict[str, Any] = {
+            "cascade": CascadeFailureAttack(),
+            "context_leakage": ContextLeakageAttack(),
+            "intent_drift": IntentDriftAttack(),
+            "collusion": CollusionDetectionAttack(),
+            "blast_radius": BlastRadiusAttack(),
+            "timeout": TimeoutResilienceAttack(),
+        }
+
+        if config is not None:
+            active = config.active_test_names()
+            # "sensitive_data" is folded into context_leakage
+            if "sensitive_data" in active and "context_leakage" not in active:
+                active = set(active) | {"context_leakage"}
+            attacks = [a for name, a in all_attacks.items() if name in active]
+        else:
+            attacks = list(all_attacks.values())
+
+        # Apply config-driven attack tuning
+        if config is not None:
+            extra_patterns = getattr(config, "sensitive_patterns", None) or []
+            timeout_seconds = getattr(config, "timeout_seconds", None)
+            for atk in attacks:
+                # Extra sensitive patterns → ContextLeakageAttack scanner
+                if isinstance(atk, ContextLeakageAttack) and extra_patterns:
+                    try:
+                        import re as _re
+
+                        from swarm_test.attacks.context_leakage import (
+                            _PatternDef,  # type: ignore[attr-defined]
+                            _scanner,
+                        )
+                        from swarm_test.core.models import Severity
+
+                        for pat in extra_patterns:
+                            _scanner._patterns.append(
+                                _PatternDef(
+                                    name=f"Custom: {pat[:40]}",
+                                    category="custom",
+                                    severity=Severity.HIGH,
+                                    regex=_re.compile(pat),
+                                )
+                            )
+                    except Exception as exc:
+                        logger.warning("Failed to add custom sensitive_patterns: %s", exc)
+                # Timeout config → TimeoutResilienceAttack
+                if isinstance(atk, TimeoutResilienceAttack) and timeout_seconds is not None:
+                    atk.timeout_seconds = float(timeout_seconds)
+
+        return attacks
 
     # ------------------------------------------------------------------
     # Test execution
@@ -215,3 +260,50 @@ class SwarmProbe:
     @property
     def framework(self) -> str:
         return self._framework
+
+    @staticmethod
+    def check_thresholds(config: Any, report: SwarmReport) -> bool:
+        """Return True if any finding meets/exceeds fail_on_severity or max_blast_radius."""
+        from swarm_test.core.models import Severity
+
+        # Severity threshold
+        severity_order = ["critical", "high", "medium", "low", "info"]
+        fail_on = getattr(config, "fail_on_severity", "critical")
+        if fail_on != "none":
+            try:
+                threshold_idx = severity_order.index(fail_on)
+            except ValueError:
+                threshold_idx = 0
+            for finding in report.all_findings:
+                try:
+                    f_idx = severity_order.index(finding.severity.value)
+                except ValueError:
+                    continue
+                if f_idx <= threshold_idx:
+                    return True
+
+        # Blast radius threshold
+        max_br = getattr(config, "max_blast_radius", 1.0)
+        if max_br < 1.0:
+            for finding in report.all_findings:
+                evidence = finding.evidence or {}
+                blast = 0.0
+                if "impact_percentage" in evidence:
+                    try:
+                        blast = float(evidence["impact_percentage"]) / 100.0
+                    except (TypeError, ValueError):
+                        blast = 0.0
+                elif "blast_radius" in evidence:
+                    try:
+                        blast = float(evidence["blast_radius"])
+                    except (TypeError, ValueError):
+                        blast = 0.0
+                if blast > max_br:
+                    return True
+
+        # Strict mode: any LOW/INFO triggers a fail too
+        if getattr(config, "strict", False) and report.all_findings:
+            _ = Severity  # ensure import is meaningful
+            return True
+
+        return False

@@ -118,6 +118,48 @@ swarm-test scan \
 
 ---
 
+## Configuration
+
+swarm-test supports a YAML config file for repeatable runs and CI gates.
+Copy the example and edit it to taste:
+
+```bash
+cp .swarmtest.example.yml .swarmtest.yml
+```
+
+A minimal `.swarmtest.yml`:
+
+```yaml
+fail_on_severity: high        # critical | high | medium | low | info | none
+max_blast_radius: 0.5         # 0.0 - 1.0 — findings above this threshold fail
+disabled_tests:               # skip individual tests
+  - collusion
+sensitive_patterns:           # extra regexes added to the sensitive-data scanner
+  - "INTERNAL-[A-Z0-9]+"
+output_format: html           # console | json | markdown | html
+output_path: ./swarm.html
+quick_scan: false
+timeout_seconds: 30
+strict: false                 # treat ANY finding as a failure
+```
+
+Run with the new `run` subcommand:
+
+```bash
+swarm-test run --config .swarmtest.yml
+swarm-test run -a "A,B,C" -e "A>B,B>C" --strict
+swarm-test run my_crew.py --config custom-config.yml --output-format json
+```
+
+**Auto-discovery.** With no `--config` flag, swarm-test discovers
+`.swarmtest.yml`, `.swarmtest.yaml`, or `swarmtest.yml` in the project root,
+falling back to a `[tool.swarmtest]` table in `pyproject.toml`.
+
+**CLI flags always override config-file values.** Exit codes from `run`:
+`0` (passed), `1` (findings exceed thresholds), `2` (config or runtime error).
+
+---
+
 ## Architecture
 
 ```
