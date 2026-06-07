@@ -29,6 +29,7 @@ VALID_TEST_NAMES: tuple[str, ...] = (
     "blast_radius",
     "timeout",
     "sensitive_data",
+    "contract_violation",
 )
 
 CONFIG_FILENAMES: tuple[str, ...] = (".swarmtest.yml", ".swarmtest.yaml", "swarmtest.yml")
@@ -89,6 +90,10 @@ class SwarmConfig(BaseModel):
     strict: bool = Field(
         default=False,
         description="Treat warnings as failures.",
+    )
+    contracts_path: str | None = Field(
+        default=None,
+        description="Path to a YAML file of agent output contracts.",
     )
 
     # ------------------------------------------------------------------

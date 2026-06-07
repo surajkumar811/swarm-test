@@ -330,6 +330,13 @@ def scan(
     default=None,
     help="Override config: treat any finding as a failure",
 )
+@click.option(
+    "--contracts",
+    "contracts_path",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False),
+    default=None,
+    help="Path to a YAML file of agent output contracts (enables contract_violation test)",
+)
 def run_cmd(
     script: str | None,
     config_path: str | None,
@@ -343,6 +350,7 @@ def run_cmd(
     output_path: str | None,
     quick_scan: bool | None,
     strict: bool | None,
+    contracts_path: str | None,
 ) -> None:
     """Run swarm-test with a YAML config file (auto-discovered) plus optional CLI overrides.
 
@@ -373,6 +381,7 @@ def run_cmd(
         "output_path": output_path,
         "quick_scan": quick_scan,
         "strict": strict,
+        "contracts_path": contracts_path,
     }
     try:
         config = merge_cli_args(config, cli_overrides)
@@ -404,6 +413,7 @@ def run_cmd(
             swarm,
             swarm_name=name if name != "swarm-run" else Path(script).stem,
             config=config,
+            contracts=config.contracts_path,
         )
     elif agents and edges:
         agent_nodes: dict[str, AgentNode] = {}
@@ -451,6 +461,7 @@ def run_cmd(
             agents=list(agent_nodes.values()),
             events=event_list,
             config=config,
+            contracts=config.contracts_path,
         )
     else:
         console.print(

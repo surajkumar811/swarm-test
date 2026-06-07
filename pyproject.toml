@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "swarm-test"
-version = "0.2.5"
+version = "0.2.6"
 description = "The first reliability testing framework for multi-agent AI systems"
 readme = "README.md"
 license = { text = "MIT" }
@@ -43,6 +43,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
     "tomli>=2.0; python_version < '3.11'",
+    "jsonschema>=4.0",
 ]
 
 [project.optional-dependencies]

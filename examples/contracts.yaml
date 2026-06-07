@@ -1,0 +1,70 @@
+# examples/contracts.yaml
+# ----------------------------------------------------------------------
+# Example output contracts for a research → analyst → writer crew.
+# Each top-level key under `contracts` is an agent role. Each contract has:
+#   - output_schema:  JSON Schema describing the role's general output
+#   - edges:          per-target-role overrides for cross-agent handoffs
+#   - strict:         when true, additional properties cause failures
+#
+# Load via:
+#   swarm-test run my_crew.py --contracts examples/contracts.yaml
+# or set `contracts_path: examples/contracts.yaml` in .swarmtest.yml.
+# ----------------------------------------------------------------------
+
+contracts:
+  researcher:
+    strict: false
+    output_schema:
+      type: object
+      required: ["summary", "sources", "confidence"]
+      properties:
+        summary:
+          type: string
+        sources:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+    edges:
+      analyst:
+        type: object
+        required: ["summary", "sources", "key_findings"]
+        properties:
+          summary: { type: string }
+          sources:
+            type: array
+            items: { type: string }
+          key_findings:
+            type: array
+            items: { type: string }
+            minItems: 1
+          confidence: { type: number }
+
+  analyst:
+    strict: true
+    output_schema:
+      type: object
+      required: ["analysis", "recommendations"]
+      properties:
+        analysis: { type: string }
+        recommendations:
+          type: array
+          items: { type: string }
+        risk_score:
+          type: number
+          minimum: 0
+          maximum: 100
+
+  writer:
+    strict: false
+    output_schema:
+      type: object
+      required: ["title", "body"]
+      properties:
+        title: { type: string }
+        body: { type: string }
+        word_count: { type: integer }

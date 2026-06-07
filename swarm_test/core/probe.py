@@ -40,6 +40,7 @@ class SwarmProbe:
         events: list[InteractionEvent] | None = None,
         framework: str | None = None,
         config: Any | None = None,
+        contracts: Any | None = None,
     ) -> None:
         self.swarm = swarm
         self.swarm_name = swarm_name
@@ -47,6 +48,7 @@ class SwarmProbe:
         self._framework = framework or self._detect_framework(swarm)
         self._adapter: Any | None = None
         self.config = config
+        self.contracts = self._resolve_contracts(contracts, config)
 
         # Static graph fallback — supply agents/events directly
         if agents:
@@ -65,7 +67,7 @@ class SwarmProbe:
                 except Exception as exc:
                     logger.warning("Adapter ingest failed: %s", exc)
 
-        self._attacks: list[Any] = self._load_attacks(config)
+        self._attacks: list[Any] = self._load_attacks(config, self.contracts)
 
     # ------------------------------------------------------------------
     # Framework detection
@@ -108,11 +110,35 @@ class SwarmProbe:
             return None
 
     @staticmethod
-    def _load_attacks(config: Any | None = None) -> list[Any]:
+    def _resolve_contracts(contracts: Any | None, config: Any | None) -> Any | None:
+        """Normalize ``contracts`` (str path | dict | ContractRegistry | None) to a registry."""
+        from swarm_test.contracts.schema import ContractRegistry
+
+        if contracts is None and config is not None:
+            path = getattr(config, "contracts_path", None)
+            if path:
+                contracts = path
+
+        if contracts is None:
+            return None
+        if isinstance(contracts, ContractRegistry):
+            return contracts
+        if isinstance(contracts, str):
+            return ContractRegistry.from_yaml(contracts)
+        if isinstance(contracts, dict):
+            return ContractRegistry.from_dict(contracts)
+        raise TypeError(
+            f"contracts must be ContractRegistry | dict | str path | None, "
+            f"got {type(contracts).__name__}"
+        )
+
+    @staticmethod
+    def _load_attacks(config: Any | None = None, contracts: Any | None = None) -> list[Any]:
         from swarm_test.attacks.blast_radius import BlastRadiusAttack
         from swarm_test.attacks.cascade import CascadeFailureAttack
         from swarm_test.attacks.collusion import CollusionDetectionAttack
         from swarm_test.attacks.context_leakage import ContextLeakageAttack
+        from swarm_test.attacks.contract_violation import ContractViolationTest
         from swarm_test.attacks.intent_drift import IntentDriftAttack
         from swarm_test.attacks.timeout_resilience import TimeoutResilienceAttack
 
@@ -125,12 +151,17 @@ class SwarmProbe:
             "blast_radius": BlastRadiusAttack(),
             "timeout": TimeoutResilienceAttack(),
         }
+        if contracts is not None:
+            all_attacks["contract_violation"] = ContractViolationTest(contracts)
 
         if config is not None:
             active = config.active_test_names()
             # "sensitive_data" is folded into context_leakage
             if "sensitive_data" in active and "context_leakage" not in active:
                 active = set(active) | {"context_leakage"}
+            # contract_violation is implicitly enabled when contracts are provided
+            if contracts is not None and "contract_violation" not in active:
+                active = set(active) | {"contract_violation"}
             attacks = [a for name, a in all_attacks.items() if name in active]
         else:
             attacks = list(all_attacks.values())
