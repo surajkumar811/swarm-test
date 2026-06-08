@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "swarm-test"
-version = "0.2.6"
+version = "0.2.7"
 description = "The first reliability testing framework for multi-agent AI systems"
 readme = "README.md"
 license = { text = "MIT" }
@@ -60,6 +60,7 @@ dev = [
 crewai = ["crewai>=0.28"]
 langgraph = ["langgraph>=0.2"]
 langchain = ["langchain>=0.1", "langgraph>=0.2"]
+autogen = ["pyautogen>=0.2"]
 
 [project.scripts]
 swarm-test = "swarm_test.cli:main"

@@ -70,6 +70,17 @@ def probe(
 
     swarm = getattr(module, swarm_var, None)
     if swarm is None:
+        # Try common alternative variable names (e.g. autogen "groupchat" / "manager")
+        for fallback in ("groupchat", "manager", "group_chat", "swarm", "graph", "agents"):
+            candidate = getattr(module, fallback, None)
+            if candidate is not None:
+                swarm = candidate
+                console.print(
+                    f"[dim]Variable '{swarm_var}' not found; "
+                    f"using '{fallback}' instead.[/dim]"
+                )
+                break
+    if swarm is None:
         console.print(
             f"[yellow]Variable '{swarm_var}' not found in script. "
             "Running static graph analysis.[/yellow]"
@@ -409,6 +420,12 @@ def run_cmd(
             console.print(f"[red]Error executing script: {exc}[/red]")
             sys.exit(2)
         swarm = getattr(module, swarm_var, None)
+        if swarm is None:
+            for fallback in ("groupchat", "manager", "group_chat", "swarm", "graph", "agents"):
+                candidate = getattr(module, fallback, None)
+                if candidate is not None:
+                    swarm = candidate
+                    break
         probe_obj = SwarmProbe(
             swarm,
             swarm_name=name if name != "swarm-run" else Path(script).stem,

@@ -4,6 +4,8 @@
 
 swarm-test builds a NetworkX interaction graph of your agent swarm and runs 5 automated chaos tests to surface cascade failures, context leakage, intent drift, collusion, and blast radius risks — all from a 3-line API.
 
+**CrewAI, LangGraph, AutoGen — one tool.**
+
 ```python
 from swarm_test import SwarmProbe
 
@@ -24,6 +26,15 @@ report.print_summary()
 | **Collusion Detection** | Dense cliques, echo chambers, orchestrator-bypass cycles |
 | **Blast Radius** | Single points of failure, critical path, redundancy score |
 
+### Supported Frameworks
+
+| Framework | Adapter | Status |
+|---|---|---|
+| **CrewAI** | `CrewAIAdapter` | Stable |
+| **LangGraph** | `LangGraphAdapter` | Stable |
+| **AutoGen** | `AutoGenAdapter` — `GroupChat`, `GroupChatManager`, `ConversableAgent` | Stable |
+| **Generic / static graph** | `BaseAdapter` | Stable |
+
 ---
 
 ## Installation
@@ -34,6 +45,7 @@ pip install swarm-test
 pip install "swarm-test[crewai]"
 pip install "swarm-test[langgraph]"
 pip install "swarm-test[langchain]"
+pip install "swarm-test[autogen]"
 ```
 
 From source:
@@ -80,6 +92,38 @@ probe  = SwarmProbe(compiled, swarm_name="my-langgraph")
 report = probe.run_all()
 report.print_summary()
 report.to_json("report.json")   # Structured JSON with stable finding IDs
+```
+
+### With an AutoGen GroupChat
+
+```python
+from autogen import ConversableAgent, GroupChat, GroupChatManager
+from swarm_test import SwarmProbe
+
+planner  = ConversableAgent(name="Planner",  system_message="...")
+coder    = ConversableAgent(name="Coder",    system_message="...")
+reviewer = ConversableAgent(name="Reviewer", system_message="...")
+
+groupchat = GroupChat(
+    agents=[planner, coder, reviewer],
+    allowed_or_disallowed_speaker_transitions={
+        planner:  [coder],
+        coder:    [reviewer],
+        reviewer: [planner],
+    },
+    speaker_transitions_type="allowed",
+)
+manager = GroupChatManager(groupchat=groupchat)
+
+probe  = SwarmProbe(manager, swarm_name="my-autogen")
+report = probe.run_all()
+report.print_summary()
+```
+
+From the CLI:
+
+```bash
+swarm-test run autogen_app.py            # auto-detects `groupchat` / `manager`
 ```
 
 ### Static graph (no live swarm)
@@ -176,8 +220,10 @@ swarm_test/
 │   ├── collusion.py        # Clique/echo-chamber/cycle detection
 │   └── blast_radius.py     # Topological SPOF + redundancy analysis
 ├── integrations/
-│   ├── base.py             # BaseAdapter
-│   └── crewai_adapter.py   # CrewAI Crew ingestion
+│   ├── base.py                # BaseAdapter
+│   ├── crewai_adapter.py      # CrewAI Crew ingestion
+│   ├── langgraph_adapter.py   # LangGraph StateGraph / CompiledGraph ingestion
+│   └── autogen_adapter.py     # AutoGen GroupChat / ConversableAgent ingestion
 ├── reporters/
 │   ├── console.py          # Rich terminal output
 │   └── html.py             # D3 force-directed graph report

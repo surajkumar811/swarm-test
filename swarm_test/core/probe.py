@@ -82,8 +82,25 @@ class SwarmProbe:
 
         if "crewai" in module.lower() or cls_name in ("Crew", "CrewAI"):
             return "crewai"
-        if "autogen" in module.lower() or "GroupChat" in cls_name:
+        # AutoGen detection: GroupChat / GroupChatManager / ConversableAgent variants
+        if (
+            "autogen" in module.lower()
+            or "GroupChat" in cls_name
+            or "GroupChatManager" in cls_name
+            or cls_name in ("ConversableAgent", "AssistantAgent", "UserProxyAgent")
+        ):
             return "autogen"
+        # List of ConversableAgent-like objects
+        if isinstance(swarm, (list, tuple)) and swarm:
+            first = swarm[0]
+            first_cls = type(first).__name__
+            first_mod = type(first).__module__ or ""
+            if (
+                "autogen" in first_mod.lower()
+                or first_cls in ("ConversableAgent", "AssistantAgent", "UserProxyAgent")
+                or "ConversableAgent" in first_cls
+            ):
+                return "autogen"
         if "langgraph" in module.lower():
             return "langgraph"
         if "langchain" in module.lower():
@@ -94,6 +111,7 @@ class SwarmProbe:
         adapters = {
             "crewai": "swarm_test.integrations.crewai_adapter.CrewAIAdapter",
             "langgraph": "swarm_test.integrations.langgraph_adapter.LangGraphAdapter",
+            "autogen": "swarm_test.integrations.autogen_adapter.AutoGenAdapter",
             "generic": "swarm_test.integrations.base.BaseAdapter",
             "static": None,
         }
