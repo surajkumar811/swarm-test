@@ -275,9 +275,7 @@ class AutoGenAdapter(BaseAdapter):
         elif isinstance(registered, (list, tuple)):
             for fn in registered:
                 fname = (
-                    getattr(fn, "name", None)
-                    or getattr(fn, "__name__", None)
-                    or type(fn).__name__
+                    getattr(fn, "name", None) or getattr(fn, "__name__", None) or type(fn).__name__
                 )
                 if str(fname) not in tool_names:
                     tool_names.append(str(fname))

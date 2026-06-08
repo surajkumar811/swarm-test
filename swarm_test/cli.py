@@ -76,8 +76,7 @@ def probe(
             if candidate is not None:
                 swarm = candidate
                 console.print(
-                    f"[dim]Variable '{swarm_var}' not found; "
-                    f"using '{fallback}' instead.[/dim]"
+                    f"[dim]Variable '{swarm_var}' not found; " f"using '{fallback}' instead.[/dim]"
                 )
                 break
     if swarm is None:
