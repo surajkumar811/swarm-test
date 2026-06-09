@@ -39,6 +39,19 @@ class TestStatus(str, Enum):
     ERROR = "error"
 
 
+def redundancy_level(score: float) -> str:
+    """Map a 0-100 redundancy score to a human-readable level."""
+    if score <= 20:
+        return "IRREPLACEABLE"
+    if score <= 40:
+        return "LOW"
+    if score <= 60:
+        return "MODERATE"
+    if score <= 80:
+        return "HIGH"
+    return "FULLY REDUNDANT"
+
+
 class AgentNode(BaseModel):
     """Represents an agent in the swarm graph."""
 
@@ -137,6 +150,7 @@ class SwarmReport(BaseModel):
     test_results: list[TestResult] = Field(default_factory=list)
     graph_metrics: dict[str, Any] = Field(default_factory=dict)
     agent_scores: dict[str, Any] = Field(default_factory=dict)
+    redundancy_scores: dict[str, float] = Field(default_factory=dict)
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime | None = None
 
@@ -298,6 +312,7 @@ class SwarmReport(BaseModel):
         # Compact agent_health array for external integrations
         agent_health_json: list[dict[str, Any]] = []
         for aid, score_obj in self.agent_scores.items():
+            r_score = getattr(score_obj, "redundancy_score", 0.0)
             agent_scores_json.append(
                 {
                     "agent_id": score_obj.agent_id,
@@ -306,6 +321,8 @@ class SwarmReport(BaseModel):
                     "score": score_obj.score,
                     "reasons": score_obj.reasons,
                     "breakdown": score_obj.breakdown,
+                    "redundancy_score": r_score,
+                    "redundancy_level": redundancy_level(r_score),
                 }
             )
             agent_health_json.append(
@@ -314,9 +331,35 @@ class SwarmReport(BaseModel):
                     "agent_name": score_obj.agent_name,
                     "agent_role": score_obj.role,
                     "score": score_obj.score,
+                    "redundancy_score": r_score,
                     "source": "swarm-test",
                 }
             )
+
+        # Per-agent redundancy export
+        redundancy_json: list[dict[str, Any]] = []
+        for aid, r_score in self.redundancy_scores.items():
+            score_obj = self.agent_scores.get(aid)
+            name = score_obj.agent_name if score_obj else aid
+            role = score_obj.role if score_obj else "unknown"
+            redundancy_json.append(
+                {
+                    "agent_id": aid,
+                    "agent_name": name,
+                    "agent_role": role,
+                    "score": round(float(r_score), 2),
+                    "level": redundancy_level(float(r_score)),
+                }
+            )
+        overall_redundancy = (
+            round(
+                sum(float(r) for r in self.redundancy_scores.values())
+                / len(self.redundancy_scores),
+                2,
+            )
+            if self.redundancy_scores
+            else 0.0
+        )
 
         result = {
             "version": "0.2.2",
@@ -335,6 +378,8 @@ class SwarmReport(BaseModel):
             },
             "agent_health_scores": agent_scores_json,
             "agent_health": agent_health_json,
+            "redundancy_scores": redundancy_json,
+            "overall_redundancy": overall_redundancy,
             "test_results": [
                 {
                     "test_name": r.test_name,

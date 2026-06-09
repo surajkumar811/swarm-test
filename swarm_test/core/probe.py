@@ -244,6 +244,12 @@ class SwarmProbe:
 
         agent_scores = AgentHealthScorer().score_all(self.graph)
 
+        # Per-agent redundancy scores (0 = irreplaceable, 100 = fully redundant)
+        redundancy_scores = self.graph.calculate_all_redundancy_scores()
+        for agent_id, r_score in redundancy_scores.items():
+            if agent_id in agent_scores:
+                agent_scores[agent_id].redundancy_score = r_score
+
         report = SwarmReport(
             swarm_name=self.swarm_name,
             framework=self._framework,
@@ -252,6 +258,7 @@ class SwarmProbe:
             test_results=results,
             graph_metrics=metrics,
             agent_scores=agent_scores,
+            redundancy_scores=redundancy_scores,
             started_at=started,
             completed_at=datetime.now(timezone.utc),
         )

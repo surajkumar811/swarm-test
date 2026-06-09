@@ -26,6 +26,59 @@ report.print_summary()
 | **Collusion Detection** | Dense cliques, echo chambers, orchestrator-bypass cycles |
 | **Blast Radius** | Single points of failure, critical path, redundancy score |
 
+### Redundancy Scoring
+
+Every agent gets a **0-100 redundancy score** that quantifies how replaceable it is:
+
+| Score | Level | Meaning |
+|---|---|---|
+| 0-20 | **IRREPLACEABLE** | Single point of failure — removing this agent breaks the swarm |
+| 21-40 | LOW | Few or no peers can cover for this agent |
+| 41-60 | MODERATE | Some overlap with peers; monitor |
+| 61-80 | HIGH | Multiple peers can pick up the work |
+| 81-100 | FULLY REDUNDANT | Failure is invisible — graph survives with no degradation |
+
+The score is composed from five factors: **path redundancy** (30%), **role uniqueness** (25%), **tool coverage** (20%), **betweenness centrality** (15%), and **degree ratio** (10%). Agents detected as articulation points (SPOFs) are capped below 20.
+
+#### Console output
+
+```
+                       Agent Redundancy
+╭───────────────────────────────────────────────────────────────╮
+│ Agent          Score      Level             Risk              │
+│ Orchestrator   8/100      IRREPLACEABLE     SPOF              │
+│ Writer         45/100     MODERATE          Monitor           │
+│ Researcher     65/100     HIGH              Safe              │
+│ Reviewer       82/100     FULLY REDUNDANT   Safe              │
+╰───────────────────────────────────────────────────────────────╯
+```
+
+#### JSON output
+
+```json
+{
+  "overall_redundancy": 50.0,
+  "redundancy_scores": [
+    {
+      "agent_id": "abc-123",
+      "agent_name": "Orchestrator",
+      "agent_role": "orchestrator",
+      "score": 8.0,
+      "level": "IRREPLACEABLE"
+    },
+    {
+      "agent_id": "def-456",
+      "agent_name": "Researcher",
+      "agent_role": "researcher",
+      "score": 65.0,
+      "level": "HIGH"
+    }
+  ]
+}
+```
+
+---
+
 ### Supported Frameworks
 
 | Framework | Adapter | Status |

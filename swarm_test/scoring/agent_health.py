@@ -21,6 +21,7 @@ class AgentHealthScore:
     score: int  # 0-100
     reasons: list[str] = field(default_factory=list)
     breakdown: dict[str, int] = field(default_factory=dict)
+    redundancy_score: float = 0.0  # 0 = irreplaceable, 100 = fully redundant
 
     @property
     def status_icon(self) -> str:

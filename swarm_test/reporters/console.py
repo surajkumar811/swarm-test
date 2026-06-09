@@ -11,7 +11,7 @@ from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
-from swarm_test.core.models import Severity, SwarmReport, TestStatus
+from swarm_test.core.models import Severity, SwarmReport, TestStatus, redundancy_level
 
 _SEVERITY_COLORS = {
     Severity.CRITICAL: "bold red",
@@ -142,6 +142,55 @@ class ConsoleReporter:
                     Text(f"({reasons_str})", style="dim"),
                 )
             c.print(health_table)
+            c.print()
+
+        # Agent redundancy scores
+        if report.redundancy_scores:
+            c.print(Rule("[bold cyan]Agent Redundancy[/bold cyan]"))
+            c.print()
+            redundancy_table = Table(
+                box=box.ROUNDED,
+                show_header=True,
+                header_style="bold cyan",
+            )
+            redundancy_table.add_column("Agent", style="bold", width=28)
+            redundancy_table.add_column("Score", width=12, justify="center")
+            redundancy_table.add_column("Level", width=18, justify="center")
+            redundancy_table.add_column("Risk", width=12, justify="center")
+
+            # Build (agent_id, name, score) tuples sorted worst → best
+            rows = []
+            for agent_id, score in report.redundancy_scores.items():
+                score_obj = report.agent_scores.get(agent_id)
+                name = score_obj.agent_name if score_obj is not None else agent_id
+                rows.append((name, float(score)))
+            rows.sort(key=lambda r: r[1])
+
+            for name, score in rows:
+                level = redundancy_level(score)
+                if score <= 20:
+                    score_style = "bold red"
+                elif score <= 40:
+                    score_style = "yellow"
+                elif score <= 60:
+                    score_style = "white"
+                elif score <= 80:
+                    score_style = "green"
+                else:
+                    score_style = "bold bright_green"
+                risk_label = "SPOF" if score < 20 else ("Monitor" if score <= 60 else "Safe")
+                risk_style = (
+                    "bold red"
+                    if risk_label == "SPOF"
+                    else "yellow" if risk_label == "Monitor" else "green"
+                )
+                redundancy_table.add_row(
+                    name,
+                    Text(f"{score:.0f}/100", style=score_style),
+                    Text(level, style=score_style),
+                    Text(risk_label, style=risk_style),
+                )
+            c.print(redundancy_table)
             c.print()
 
         # Findings detail

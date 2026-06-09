@@ -1,7 +1,6 @@
 fail_on_severity: high
-contracts_path: examples/contracts.yaml
 enabled_tests:
-  - contract_violation
   - cascade
   - blast_radius
+  - contract_violation
 output_format: console
