@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "swarm-test"
-version = "0.2.8"
+version = "0.3.0"
 description = "The first reliability testing framework for multi-agent AI systems"
 readme = "README.md"
 license = { text = "MIT" }

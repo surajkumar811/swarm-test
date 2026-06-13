@@ -347,6 +347,15 @@ def scan(
     default=None,
     help="Path to a YAML file of agent output contracts (enables contract_violation test)",
 )
+@click.option(
+    "--github-action",
+    is_flag=True,
+    default=False,
+    help=(
+        "Emit GitHub Actions annotations and a step summary. "
+        "Auto-enabled when GITHUB_ACTIONS=true."
+    ),
+)
 def run_cmd(
     script: str | None,
     config_path: str | None,
@@ -361,6 +370,7 @@ def run_cmd(
     quick_scan: bool | None,
     strict: bool | None,
     contracts_path: str | None,
+    github_action: bool,
 ) -> None:
     """Run swarm-test with a YAML config file (auto-discovered) plus optional CLI overrides.
 
@@ -491,6 +501,19 @@ def run_cmd(
     except Exception as exc:
         console.print(f"[red]Probe failed: {exc}[/red]")
         sys.exit(2)
+
+    # ---- GitHub Actions integration -----------------------------------
+    import os as _os
+
+    in_github = github_action or _os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+    if in_github:
+        from swarm_test.reporters.github import GitHubReporter
+
+        gh_reporter = GitHubReporter()
+        gh_reporter.emit_annotations(report)
+        summary_path = gh_reporter.write_step_summary(report)
+        if summary_path:
+            console.print(f"[dim]GitHub step summary written to {summary_path}[/dim]")
 
     # ---- Emit output ---------------------------------------------------
     fmt = config.output_format

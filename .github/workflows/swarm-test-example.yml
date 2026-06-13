@@ -1,0 +1,49 @@
+# Example workflow: run swarm-test on every PR as a reliability gate.
+#
+# Copy this file into your own repository at .github/workflows/swarm-test.yml
+# and adjust the `with:` inputs to point at your agent script and contracts.
+# If the swarm's reliability drops below the configured threshold the build
+# will fail — surfacing regressions in agent topology before they merge.
+
+name: swarm-test
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  reliability:
+    name: Swarm reliability gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run swarm-test
+        uses: surajkumar811/swarm-test@v0.3.0
+        with:
+          # Path to a Python script exposing the swarm object (e.g. `crew`,
+          # `groupchat`, or `manager`). Omit to use --agents/--edges instead.
+          script: examples/research_crew.py
+
+          # Optional: agent output contracts (JSON Schema) for the
+          # contract_violation test.
+          contracts: examples/contracts.yaml
+
+          # Minimum severity that fails the build.
+          # critical | high | medium | low | info | none
+          fail-on-severity: high
+
+          # Emit a machine-readable JSON report for downstream tooling.
+          output-format: json
+          output-path: swarm-report.json
+
+      # Persist the JSON report as a build artifact so reviewers can download
+      # the full finding set from the PR's "Checks" tab.
+      - name: Upload swarm report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm-report
+          path: swarm-report.json

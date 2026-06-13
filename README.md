@@ -2,9 +2,43 @@
 
 **The first reliability testing framework for multi-agent AI systems.**
 
+[![swarm-test](https://img.shields.io/badge/swarm--test-passing-purple)](https://github.com/surajkumar811/swarm-test)
+
 swarm-test builds a NetworkX interaction graph of your agent swarm and runs 5 automated chaos tests to surface cascade failures, context leakage, intent drift, collusion, and blast radius risks — all from a 3-line API.
 
 **CrewAI, LangGraph, AutoGen — one tool.**
+
+## GitHub Action
+
+Drop swarm-test into your CI as a reliability gate on every PR. If your agent
+system's reliability drops below the configured threshold, the build fails.
+
+```yaml
+# .github/workflows/swarm-test.yml
+on: [pull_request]
+jobs:
+  swarm-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: surajkumar811/swarm-test@v0.3.0
+        with:
+          script: my_crew.py
+          fail-on-severity: high
+```
+
+Findings appear inline on the PR as `::error::` / `::warning::` / `::notice::`
+annotations, and a swarm-score summary is posted to the workflow's job summary.
+Add a badge to your repo:
+
+```markdown
+[![swarm-test](https://img.shields.io/badge/swarm--test-passing-purple)](https://github.com/surajkumar811/swarm-test)
+```
+
+See [`.github/workflows/swarm-test-example.yml`](.github/workflows/swarm-test-example.yml)
+for a fully-annotated reference workflow.
+
+---
 
 ```python
 from swarm_test import SwarmProbe

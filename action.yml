@@ -1,0 +1,112 @@
+name: "swarm-test"
+description: "Multi-agent reliability testing for your CI pipeline"
+author: "swarm-test contributors"
+branding:
+  icon: "shield"
+  color: "purple"
+
+inputs:
+  script:
+    description: "Path to a Python script containing the agent swarm object (loaded by swarm-test run)."
+    required: false
+    default: ""
+  agents:
+    description: "Comma-separated agent names for static topology scans (e.g. 'A,B,C')."
+    required: false
+    default: ""
+  edges:
+    description: "Comma-separated edges for static topology scans ('A>B' one-way, 'A<>B' bidirectional)."
+    required: false
+    default: ""
+  config:
+    description: "Path to a .swarmtest.yml config file. Defaults to auto-discovery in the workspace."
+    required: false
+    default: ""
+  contracts:
+    description: "Path to a YAML file of agent output contracts (enables contract_violation test)."
+    required: false
+    default: ""
+  fail-on-severity:
+    description: "Override severity threshold: critical, high, medium, low, info, none."
+    required: false
+    default: ""
+  output-format:
+    description: "Report format: console, json, markdown, html."
+    required: false
+    default: "console"
+  output-path:
+    description: "Where to write the report (for json/markdown/html)."
+    required: false
+    default: ""
+  version:
+    description: "swarm-test version to install. Use 'latest' for the newest release or pin a specific version (e.g. '0.3.0')."
+    required: false
+    default: "latest"
+  working-directory:
+    description: "Working directory in which to execute swarm-test."
+    required: false
+    default: "."
+
+outputs:
+  exit-code:
+    description: "Exit code from swarm-test (0 pass, 1 findings exceed threshold, 2 error)."
+    value: ${{ steps.swarm_test.outputs.exit-code }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install swarm-test
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        if [ "${{ inputs.version }}" = "latest" ] || [ -z "${{ inputs.version }}" ]; then
+          pip install "swarm-test"
+        else
+          pip install "swarm-test==${{ inputs.version }}"
+        fi
+
+    - name: Run swarm-test
+      id: swarm_test
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GITHUB_ACTIONS: "true"
+      run: |
+        set +e
+        cmd=(swarm-test run --github-action)
+
+        if [ -n "${{ inputs.script }}" ]; then
+          cmd+=("${{ inputs.script }}")
+        fi
+        if [ -n "${{ inputs.agents }}" ]; then
+          cmd+=(--agents "${{ inputs.agents }}")
+        fi
+        if [ -n "${{ inputs.edges }}" ]; then
+          cmd+=(--edges "${{ inputs.edges }}")
+        fi
+        if [ -n "${{ inputs.config }}" ]; then
+          cmd+=(--config "${{ inputs.config }}")
+        fi
+        if [ -n "${{ inputs.contracts }}" ]; then
+          cmd+=(--contracts "${{ inputs.contracts }}")
+        fi
+        if [ -n "${{ inputs.fail-on-severity }}" ]; then
+          cmd+=(--fail-on-severity "${{ inputs.fail-on-severity }}")
+        fi
+        if [ -n "${{ inputs.output-format }}" ]; then
+          cmd+=(--output-format "${{ inputs.output-format }}")
+        fi
+        if [ -n "${{ inputs.output-path }}" ]; then
+          cmd+=(--output-path "${{ inputs.output-path }}")
+        fi
+
+        echo "Running: ${cmd[*]}"
+        "${cmd[@]}"
+        exit_code=$?
+        echo "exit-code=${exit_code}" >> "$GITHUB_OUTPUT"
+        exit ${exit_code}
