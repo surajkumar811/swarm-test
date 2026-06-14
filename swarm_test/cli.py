@@ -213,15 +213,26 @@ def probe(
     help="Exit with code 1 if findings at this severity or above exist",
 )
 @click.option(
-    "--quiet", "-q", "quiet", is_flag=True, default=False,
+    "--quiet",
+    "-q",
+    "quiet",
+    is_flag=True,
+    default=False,
     help="Print only the headline verdict line.",
 )
 @click.option(
-    "--verbose", "-V", "verbose", is_flag=True, default=False,
+    "--verbose",
+    "-V",
+    "verbose",
+    is_flag=True,
+    default=False,
     help="Print every finding plus graph metrics and full health/redundancy tables.",
 )
 @click.option(
-    "--open", "open_report", is_flag=True, default=False,
+    "--open",
+    "open_report",
+    is_flag=True,
+    default=False,
     help="Open the generated HTML report in the default browser.",
 )
 def scan(
@@ -442,15 +453,26 @@ def scan(
     ),
 )
 @click.option(
-    "--quiet", "-q", "quiet", is_flag=True, default=False,
+    "--quiet",
+    "-q",
+    "quiet",
+    is_flag=True,
+    default=False,
     help="Print only the headline verdict line (perfect for CI scripts).",
 )
 @click.option(
-    "--verbose", "-V", "verbose", is_flag=True, default=False,
+    "--verbose",
+    "-V",
+    "verbose",
+    is_flag=True,
+    default=False,
     help="Print every finding plus graph metrics and full health/redundancy tables.",
 )
 @click.option(
-    "--open", "open_report", is_flag=True, default=False,
+    "--open",
+    "open_report",
+    is_flag=True,
+    default=False,
     help="Open the generated HTML report in the default browser (with --output-format html).",
 )
 def run_cmd(
@@ -523,9 +545,7 @@ def run_cmd(
         import importlib.util
 
         if config.output_verbosity != "quiet":
-            console.print(
-                f"[bold blue]swarm-test run[/bold blue] — loading [cyan]{script}[/cyan]"
-            )
+            console.print(f"[bold blue]swarm-test run[/bold blue] — loading [cyan]{script}[/cyan]")
         spec = importlib.util.spec_from_file_location("_swarm_script", script)
         if spec is None or spec.loader is None:
             console.print(f"[red]Cannot load script: {script}[/red]")

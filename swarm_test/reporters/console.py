@@ -87,9 +87,7 @@ def _headline_text(report: SwarmReport) -> Text:
             parts.append(f"{total_other} finding{'s' if total_other != 1 else ''}")
         findings_part = ", ".join(parts) + " findings"
 
-    return Text.from_markup(
-        f"[{style}]Swarm Score: {score}/100 — {level}[/] ({findings_part})"
-    )
+    return Text.from_markup(f"[{style}]Swarm Score: {score}/100 — {level}[/] ({findings_part})")
 
 
 class ConsoleReporter:
@@ -293,9 +291,7 @@ class ConsoleReporter:
             ]
             visible = sorted(all_findings, key=lambda f: severity_order.index(f.severity))
             if not verbose:
-                visible = [
-                    f for f in visible if f.severity in (Severity.CRITICAL, Severity.HIGH)
-                ]
+                visible = [f for f in visible if f.severity in (Severity.CRITICAL, Severity.HIGH)]
 
             hidden_count = len(all_findings) - len(visible)
             if visible:
@@ -317,9 +313,7 @@ class ConsoleReporter:
                     if finding.remediation:
                         arrow_line = f"\n\n[bold cyan]→[/bold cyan] {finding.remediation}"
                     content = (
-                        f"[bold]{finding.title}[/bold]\n\n"
-                        f"{finding.description}"
-                        f"{arrow_line}"
+                        f"[bold]{finding.title}[/bold]\n\n" f"{finding.description}" f"{arrow_line}"
                     )
                     c.print(Panel(content, title=title, border_style=color.split()[-1]))
                     c.print()

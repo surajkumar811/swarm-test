@@ -1048,9 +1048,7 @@ class HtmlReporter:
                         e[k] = v.isoformat()
         else:
             for i in range(report.agent_count):
-                nodes_raw.append(
-                    {"id": f"agent_{i}", "name": f"Agent {i + 1}", "role": "unknown"}
-                )
+                nodes_raw.append({"id": f"agent_{i}", "name": f"Agent {i + 1}", "role": "unknown"})
 
         # Health + redundancy lookups
         agent_health: dict[str, Any] = {
@@ -1059,19 +1057,19 @@ class HtmlReporter:
 
         # Findings-by-edge (src, dst) → count for heatmap red overlay
         finding_edge_counts: Counter = Counter()
-        for f in report.all_findings:
-            if len(f.affected_agents) >= 2:
-                finding_edge_counts[(f.affected_agents[0], f.affected_agents[1])] += 1
+        for finding in report.all_findings:
+            if len(finding.affected_agents) >= 2:
+                finding_edge_counts[(finding.affected_agents[0], finding.affected_agents[1])] += 1
 
         # ---- Enrich nodes for D3 ------------------------------------
         nodes_for_js: list[dict[str, Any]] = []
         agent_name_lookup: dict[str, str] = {}
         for n in nodes_raw:
-            nid = n.get("id")
-            name = n.get("name", nid)
+            nid = str(n.get("id", ""))
+            name = str(n.get("name", nid))
             agent_name_lookup[nid] = name
             hs = agent_health.get(nid)
-            tools = []
+            tools: list[str] = []
             meta = n.get("metadata") or {}
             if isinstance(meta, dict):
                 tlist = meta.get("tools")
@@ -1126,9 +1124,7 @@ class HtmlReporter:
                 }
 
         # ---- Health table data (sorted worst → best) ----------------
-        agent_scores_sorted = sorted(
-            agent_health.values(), key=lambda s: getattr(s, "score", 0)
-        )
+        agent_scores_sorted = sorted(agent_health.values(), key=lambda s: getattr(s, "score", 0))
 
         # ---- Redundancy rows ----------------------------------------
         redundancy_rows: list[dict[str, Any]] = []
@@ -1205,8 +1201,8 @@ class HtmlReporter:
             generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         )
 
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(html)
+        with open(output_path, "w", encoding="utf-8") as fh:
+            fh.write(html)
         return output_path
 
     @staticmethod
