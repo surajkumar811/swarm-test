@@ -105,8 +105,9 @@ class TimeoutResilienceAttack(BaseAttack):
                     affected_agents=affected,
                     evidence={"untimed_edge_count": len(untimed_edges)},
                     remediation=(
-                        "Set explicit timeouts on all inter-agent calls. "
-                        "Use circuit breakers to abort after a threshold."
+                        f"Add timeout handling on the {len(untimed_edges)} "
+                        f"untimed edge(s) — wrap inter-agent calls with an "
+                        f"explicit timeout and circuit breaker."
                     ),
                 )
             )
@@ -145,8 +146,10 @@ class TimeoutResilienceAttack(BaseAttack):
                                 "tier_ms": tier_ms,
                             },
                             remediation=(
-                                "Add timeout handling, retry logic with backoff, "
-                                "or fallback responses for slow upstream agents."
+                                f"Add timeout handling to '{src_name}' — current "
+                                f"response time {duration / 1000:.1f}s exceeds "
+                                f"the {tier_ms / 1000:.0f}s threshold; add retry "
+                                f"with backoff or a fallback response for '{dst_name}'."
                             ),
                         )
                     )
@@ -187,9 +190,10 @@ class TimeoutResilienceAttack(BaseAttack):
                                 "out_degree": out_degree,
                             },
                             remediation=(
-                                "Implement timeout handling and error propagation. "
-                                "Agents should emit TIMEOUT or ERROR events when "
-                                "upstream calls exceed acceptable latency."
+                                f"Add timeout handling to '{agent_name}' — emit "
+                                f"TIMEOUT or ERROR events when upstream calls exceed "
+                                f"the configured threshold so failures propagate "
+                                f"instead of stalling."
                             ),
                         )
                     )
@@ -217,8 +221,9 @@ class TimeoutResilienceAttack(BaseAttack):
                             "single_upstream": upstream_name,
                         },
                         remediation=(
-                            "Add redundant upstream agents or implement a timeout with "
-                            "a default/cached response when the sole upstream is slow."
+                            f"Add a redundant upstream for '{agent_name}' or a "
+                            f"timeout with a cached/default response when "
+                            f"'{upstream_name}' is slow."
                         ),
                     )
                 )

@@ -72,9 +72,10 @@ class CollusionDetectionAttack(BaseAttack):
                     affected_agents=clique,
                     evidence={"clique": clique, "agent_names": agent_names},
                     remediation=(
-                        "Audit communication logs for this agent cluster. "
-                        "Enforce hub-and-spoke topology via an orchestrator agent. "
-                        "Add rate limiting on peer-to-peer agent communication."
+                        f"Break the privilege escalation chain by adding approval "
+                        f"gates between '{agent_names[0]}' and '{agent_names[-1]}', "
+                        f"and route the {len(clique)}-agent clique through an "
+                        f"orchestrator."
                     ),
                 )
             )
@@ -142,8 +143,9 @@ class CollusionDetectionAttack(BaseAttack):
                             "external_edges": external_edges,
                         },
                         remediation=(
-                            "Break up isolated agent clusters. Require all agent "
-                            "sub-groups to report through a central orchestrator."
+                            f"Break the echo chamber {agent_names} by requiring at "
+                            f"least one external edge to a non-cluster agent and "
+                            f"routing summaries through an orchestrator."
                         ),
                     )
                 )
@@ -183,8 +185,9 @@ class CollusionDetectionAttack(BaseAttack):
                         affected_agents=cycle,
                         evidence={"cycle": cycle, "orchestrators": list(orchestrators)},
                         remediation=(
-                            "Redesign the agent graph so all cycles pass through "
-                            "an orchestrator node that can audit decisions."
+                            f"Break the privilege escalation chain by adding approval "
+                            f"gates between '{agent_names[0]}' and '{agent_names[-1]}', "
+                            f"and route the cycle through an orchestrator."
                         ),
                     )
                 )
@@ -243,8 +246,9 @@ class CollusionDetectionAttack(BaseAttack):
                                 "total_events": total,
                             },
                             remediation=(
-                                "Implement independent health monitoring for each agent. "
-                                "Require agents to propagate failure signals up the chain."
+                                f"Require '{dst_name}' to propagate failure signals from "
+                                f"'{src_name}' upstream instead of silently absorbing the "
+                                f"{failure_rate:.0%} error rate."
                             ),
                         )
                     )

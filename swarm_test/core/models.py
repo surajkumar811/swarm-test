@@ -186,12 +186,43 @@ class SwarmReport(BaseModel):
         total = sum(weights.get(f.severity, 0) for f in self.all_findings)
         return min(100.0, float(total))
 
-    def print_summary(self) -> None:
-        """Print a rich-formatted summary to console."""
+    @property
+    def swarm_score(self) -> int:
+        """0-100 swarm reliability score (100 = best). Inverse of risk_score."""
+        return int(round(max(0.0, 100.0 - self.risk_score)))
+
+    @property
+    def certification_level(self) -> str:
+        """Categorical label derived from the swarm_score."""
+        s = self.swarm_score
+        if s >= 90:
+            return "EXCELLENT"
+        if s >= 75:
+            return "GOOD"
+        if s >= 50:
+            return "NEEDS IMPROVEMENT"
+        if s >= 25:
+            return "AT RISK"
+        return "CRITICAL"
+
+    def severity_counts(self) -> dict[str, int]:
+        """Return a dict of severity → count across all findings."""
+        counts: dict[str, int] = {s.value: 0 for s in Severity}
+        for f in self.all_findings:
+            counts[f.severity.value] += 1
+        return counts
+
+    def print_summary(self, verbosity: str = "normal") -> None:
+        """Print a rich-formatted summary to console.
+
+        Args:
+            verbosity: "quiet" (headline only), "normal" (default),
+                       or "verbose" (every finding + every detail).
+        """
         from swarm_test.reporters.console import ConsoleReporter
 
         reporter = ConsoleReporter()
-        reporter.render(self)
+        reporter.render(self, verbosity=verbosity)
 
     def print_graph(self, *, graph: Any = None) -> None:
         """Print ASCII agent interaction graph to console."""

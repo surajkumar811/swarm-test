@@ -566,7 +566,7 @@ class TestSwarmProbe:
         path = reporter.render_with_graph(report, probe.graph, output)
         assert (tmp_path / "test_report.html").exists()
         content = (tmp_path / "test_report.html").read_text()
-        assert "SwarmTest" in content
+        assert "swarm-test Reliability Report" in content
         assert "d3js.org" in content
 
 

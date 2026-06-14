@@ -46,7 +46,57 @@ from swarm_test import SwarmProbe
 probe  = SwarmProbe(crew)
 report = probe.run_all()
 report.print_summary()
+# First line of output:
+# Swarm Score: 72/100 — NEEDS IMPROVEMENT (3 critical, 2 high findings)
 ```
+
+---
+
+## Output Modes
+
+Every command (`probe`, `scan`, `run`) leads with a single **headline verdict
+line** that tells you the swarm's reliability at a glance — perfect for CI logs
+and dashboards.
+
+```
+Swarm Score: 92/100 — EXCELLENT (no findings)
+Swarm Score: 72/100 — NEEDS IMPROVEMENT (3 critical, 2 high findings)
+Swarm Score:  8/100 — CRITICAL (5 critical, 11 high findings)
+```
+
+| Flag | Output |
+|---|---|
+| `--quiet` / `-q` | Only the headline verdict (one line). Ideal for `if` checks in CI scripts. |
+| *(default)* | Headline + test results table + CRITICAL / HIGH findings + SPOFs. |
+| `--verbose` / `-V` | Headline + every finding (including LOW / INFO), graph metrics, full health & redundancy tables. |
+
+```bash
+swarm-test run my_crew.py --quiet           # CI-friendly: one line out
+swarm-test run my_crew.py                   # default summary
+swarm-test run my_crew.py --verbose         # full report
+```
+
+The same setting is available in `.swarmtest.yml`:
+
+```yaml
+output_verbosity: normal   # quiet | normal | verbose
+```
+
+## Interactive HTML Report
+
+`--output-format html` renders a self-contained dashboard with a sticky
+navigation bar, a live D3 force-directed agent graph (drag, zoom, click to
+highlight neighbours), an NxN interaction heatmap, sortable health and
+redundancy tables, and collapsible findings cards filterable by severity.
+
+```bash
+swarm-test run my_crew.py --output-format html --output-path report.html --open
+```
+
+`--open` launches the report in your default browser as soon as it's
+generated. Single-points-of-failure pulse red on the graph; cells in the
+heatmap that have findings are tinted red so you can jump straight to the
+offending edge.
 
 ---
 

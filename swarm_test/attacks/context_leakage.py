@@ -361,11 +361,12 @@ class ContextLeakageAttack(BaseAttack):
                                 ],
                                 "source_agent": src_name,
                                 "target_agent": dst_name,
+                                "pattern_type": types_str,
                             },
                             remediation=(
-                                "Implement context isolation boundaries. Strip or mask "
-                                "sensitive fields before passing context between agents. "
-                                "Use an agent-level secrets manager."
+                                f"Remove or mask {types_str} in '{src_name}' output "
+                                f"before passing to '{dst_name}', or add a sanitizer "
+                                f"agent on the '{src_name}' → '{dst_name}' edge."
                             ),
                         )
                     )
@@ -421,10 +422,11 @@ class ContextLeakageAttack(BaseAttack):
                                 "This key is on the restricted list."
                             ),
                             affected_agents=[event.source_agent_id, event.target_agent_id],
-                            evidence={"key": key, "event_id": event.id},
+                            evidence={"key": key, "event_id": event.id, "pattern_type": key},
                             remediation=(
-                                "Remove or encrypt sensitive payload keys. "
-                                "Use references/handles rather than raw secrets."
+                                f"Add data isolation between '{src_name}' and '{dst_name}' "
+                                f"— remove direct edge or add a sanitizer agent that "
+                                f"strips the '{key}' field."
                             ),
                         )
                     )

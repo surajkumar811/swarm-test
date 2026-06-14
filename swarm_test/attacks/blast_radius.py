@@ -88,9 +88,9 @@ class BlastRadiusAttack(BaseAttack):
                         "downstream_count": len(blast["downstream_agents"]),
                     },
                     remediation=(
-                        "Introduce redundant agents or fallback paths. "
-                        "Consider load balancing across multiple agents for this role. "
-                        "Implement circuit breakers on connections to this agent."
+                        f"Reduce '{spof_name}' connections by introducing intermediate "
+                        f"routing agents, or replicate '{spof_name}' so traffic can "
+                        f"fail over to a peer."
                     ),
                 )
             )
@@ -115,8 +115,9 @@ class BlastRadiusAttack(BaseAttack):
                     affected_agents=critical_path,
                     evidence={"path": critical_path, "path_names": path_names},
                     remediation=(
-                        "Shorten the critical path by parallelizing independent agents. "
-                        "Add checkpointing and recovery mechanisms along this path."
+                        f"Shorten the critical path '{' → '.join(path_names)}' by "
+                        f"parallelising independent agents and adding checkpoint/retry "
+                        f"between '{path_names[0]}' and '{path_names[-1]}'."
                     ),
                 )
             )
@@ -159,8 +160,9 @@ class BlastRadiusAttack(BaseAttack):
                         affected_agents=list(g.nodes()),
                         evidence={"redundancy_score": redundancy, "edge_count": actual_edges},
                         remediation=(
-                            "Add fallback communication paths between agents. "
-                            "Implement retry logic with alternative agent routing."
+                            f"Add fallback edges so any single edge failure still "
+                            f"leaves the swarm connected — current redundancy score "
+                            f"is {redundancy:.2f}; aim for ≥ 0.30."
                         ),
                     )
                 )
@@ -180,7 +182,10 @@ class BlastRadiusAttack(BaseAttack):
                     ),
                     affected_agents=isolated,
                     evidence={"isolated_agents": isolated_names},
-                    remediation=("Remove unused agents or integrate them into the swarm workflow."),
+                    remediation=(
+                        f"Remove unused agents {isolated_names} or wire them into the "
+                        f"swarm workflow with at least one upstream or downstream edge."
+                    ),
                 )
             )
 

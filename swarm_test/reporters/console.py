@@ -1,4 +1,12 @@
-"""Rich console reporter for SwarmReport."""
+"""Rich console reporter for SwarmReport.
+
+The reporter supports three verbosity levels:
+
+- ``quiet``    : a single headline verdict line, nothing else.
+- ``normal``   : headline + test results + CRITICAL/HIGH findings + SPOFs.
+- ``verbose``  : headline + everything (LOW/INFO findings, graph metrics,
+                 healthy agents, full redundancy table).
+"""
 
 from __future__ import annotations
 
@@ -36,6 +44,53 @@ _SEVERITY_EMOJI = {
     Severity.INFO: "[i]",
 }
 
+# Severity → color used for the headline verdict line by certification level.
+_LEVEL_STYLE = {
+    "EXCELLENT": "bold bright_green",
+    "GOOD": "green",
+    "NEEDS IMPROVEMENT": "yellow",
+    "AT RISK": "red",
+    "CRITICAL": "bold bright_red",
+}
+
+_VALID_VERBOSITY = {"quiet", "normal", "verbose"}
+
+
+def _normalise_verbosity(v: str | None) -> str:
+    if v is None:
+        return "normal"
+    vv = v.lower()
+    return vv if vv in _VALID_VERBOSITY else "normal"
+
+
+def _headline_text(report: SwarmReport) -> Text:
+    """Build the single-line headline verdict text."""
+    counts = report.severity_counts()
+    n_critical = counts.get("critical", 0)
+    n_high = counts.get("high", 0)
+    score = report.swarm_score
+    level = report.certification_level
+    style = _LEVEL_STYLE.get(level, "white")
+
+    findings_part: str
+    if not report.all_findings:
+        findings_part = "no findings"
+    else:
+        parts = []
+        if n_critical:
+            parts.append(f"{n_critical} critical")
+        if n_high:
+            parts.append(f"{n_high} high")
+        if not parts:
+            # No critical/high but other severities exist
+            total_other = sum(counts.values())
+            parts.append(f"{total_other} finding{'s' if total_other != 1 else ''}")
+        findings_part = ", ".join(parts) + " findings"
+
+    return Text.from_markup(
+        f"[{style}]Swarm Score: {score}/100 — {level}[/] ({findings_part})"
+    )
+
 
 class ConsoleReporter:
     """Renders a SwarmReport to the terminal using Rich."""
@@ -43,8 +98,30 @@ class ConsoleReporter:
     def __init__(self, console: Any = None) -> None:
         self.console = console or Console(highlight=False)
 
-    def render(self, report: SwarmReport) -> None:
+    # ------------------------------------------------------------------
+    # Public entry point
+    # ------------------------------------------------------------------
+
+    def render(self, report: SwarmReport, *, verbosity: str = "normal") -> None:
+        verbosity = _normalise_verbosity(verbosity)
         c = self.console
+
+        # Headline verdict is always the first line.
+        c.print(_headline_text(report))
+
+        if verbosity == "quiet":
+            return
+
+        self._render_body(report, verbosity)
+
+    # ------------------------------------------------------------------
+    # Body rendering
+    # ------------------------------------------------------------------
+
+    def _render_body(self, report: SwarmReport, verbosity: str) -> None:
+        c = self.console
+        verbose = verbosity == "verbose"
+
         c.print()
         c.print(Rule("[bold blue]SWARM-TEST RELIABILITY REPORT[/bold blue]"))
         c.print()
@@ -97,8 +174,8 @@ class ConsoleReporter:
         c.print(table)
         c.print()
 
-        # Graph metrics
-        if report.graph_metrics:
+        # Graph metrics — verbose only
+        if verbose and report.graph_metrics:
             gm = report.graph_metrics
             gm_text = (
                 f"[bold]Nodes:[/bold] {gm.get('node_count', '?')}   "
@@ -111,54 +188,43 @@ class ConsoleReporter:
             c.print(Panel(gm_text, title="[bold]Graph Metrics[/bold]", border_style="cyan"))
             c.print()
 
-        # Agent health scores
+        # Agent health scores — verbose shows all, normal hides healthy
         if report.agent_scores:
-            c.print(Rule("[bold cyan]Agent Health Scores[/bold cyan]"))
-            c.print()
-            health_table = Table(
-                box=box.ROUNDED,
-                show_header=True,
-                header_style="bold cyan",
-            )
-            health_table.add_column("Agent", style="bold", width=28)
-            health_table.add_column("Score", width=12, justify="center")
-            health_table.add_column("Status", width=10, justify="center")
-            health_table.add_column("Details", min_width=40)
-
-            # Sort worst to best
             sorted_scores = sorted(report.agent_scores.values(), key=lambda s: s.score)
-            for hs in sorted_scores:
-                if hs.score >= 70:
-                    score_style = "green"
-                elif hs.score >= 40:
-                    score_style = "yellow"
-                else:
-                    score_style = "bold red"
-                reasons_str = ", ".join(hs.reasons) if hs.reasons else "no issues"
-                health_table.add_row(
-                    hs.agent_name,
-                    Text(f"{hs.score}/100", style=score_style),
-                    Text(hs.status_icon, justify="center"),
-                    Text(f"({reasons_str})", style="dim"),
+            if not verbose:
+                sorted_scores = [hs for hs in sorted_scores if hs.score < 70]
+            if sorted_scores:
+                c.print(Rule("[bold cyan]Agent Health Scores[/bold cyan]"))
+                c.print()
+                health_table = Table(
+                    box=box.ROUNDED,
+                    show_header=True,
+                    header_style="bold cyan",
                 )
-            c.print(health_table)
-            c.print()
+                health_table.add_column("Agent", style="bold", width=28)
+                health_table.add_column("Score", width=12, justify="center")
+                health_table.add_column("Status", width=10, justify="center")
+                health_table.add_column("Details", min_width=40)
 
-        # Agent redundancy scores
+                for hs in sorted_scores:
+                    if hs.score >= 70:
+                        score_style = "green"
+                    elif hs.score >= 40:
+                        score_style = "yellow"
+                    else:
+                        score_style = "bold red"
+                    reasons_str = ", ".join(hs.reasons) if hs.reasons else "no issues"
+                    health_table.add_row(
+                        hs.agent_name,
+                        Text(f"{hs.score}/100", style=score_style),
+                        Text(hs.status_icon, justify="center"),
+                        Text(f"({reasons_str})", style="dim"),
+                    )
+                c.print(health_table)
+                c.print()
+
+        # Agent redundancy: verbose shows full table, normal shows SPOFs only
         if report.redundancy_scores:
-            c.print(Rule("[bold cyan]Agent Redundancy[/bold cyan]"))
-            c.print()
-            redundancy_table = Table(
-                box=box.ROUNDED,
-                show_header=True,
-                header_style="bold cyan",
-            )
-            redundancy_table.add_column("Agent", style="bold", width=28)
-            redundancy_table.add_column("Score", width=12, justify="center")
-            redundancy_table.add_column("Level", width=18, justify="center")
-            redundancy_table.add_column("Risk", width=12, justify="center")
-
-            # Build (agent_id, name, score) tuples sorted worst → best
             rows = []
             for agent_id, score in report.redundancy_scores.items():
                 score_obj = report.agent_scores.get(agent_id)
@@ -166,34 +232,50 @@ class ConsoleReporter:
                 rows.append((name, float(score)))
             rows.sort(key=lambda r: r[1])
 
-            for name, score in rows:
-                level = redundancy_level(score)
-                if score <= 20:
-                    score_style = "bold red"
-                elif score <= 40:
-                    score_style = "yellow"
-                elif score <= 60:
-                    score_style = "white"
-                elif score <= 80:
-                    score_style = "green"
-                else:
-                    score_style = "bold bright_green"
-                risk_label = "SPOF" if score < 20 else ("Monitor" if score <= 60 else "Safe")
-                risk_style = (
-                    "bold red"
-                    if risk_label == "SPOF"
-                    else "yellow" if risk_label == "Monitor" else "green"
-                )
-                redundancy_table.add_row(
-                    name,
-                    Text(f"{score:.0f}/100", style=score_style),
-                    Text(level, style=score_style),
-                    Text(risk_label, style=risk_style),
-                )
-            c.print(redundancy_table)
-            c.print()
+            if not verbose:
+                rows = [r for r in rows if r[1] < 20]
 
-        # Findings detail
+            if rows:
+                c.print(Rule("[bold cyan]Agent Redundancy[/bold cyan]"))
+                c.print()
+                redundancy_table = Table(
+                    box=box.ROUNDED,
+                    show_header=True,
+                    header_style="bold cyan",
+                )
+                redundancy_table.add_column("Agent", style="bold", width=28)
+                redundancy_table.add_column("Score", width=12, justify="center")
+                redundancy_table.add_column("Level", width=18, justify="center")
+                redundancy_table.add_column("Risk", width=12, justify="center")
+
+                for name, score in rows:
+                    level = redundancy_level(score)
+                    if score <= 20:
+                        score_style = "bold red"
+                    elif score <= 40:
+                        score_style = "yellow"
+                    elif score <= 60:
+                        score_style = "white"
+                    elif score <= 80:
+                        score_style = "green"
+                    else:
+                        score_style = "bold bright_green"
+                    risk_label = "SPOF" if score < 20 else ("Monitor" if score <= 60 else "Safe")
+                    risk_style = (
+                        "bold red"
+                        if risk_label == "SPOF"
+                        else "yellow" if risk_label == "Monitor" else "green"
+                    )
+                    redundancy_table.add_row(
+                        name,
+                        Text(f"{score:.0f}/100", style=score_style),
+                        Text(level, style=score_style),
+                        Text(risk_label, style=risk_style),
+                    )
+                c.print(redundancy_table)
+                c.print()
+
+        # Findings — verbose shows all, normal filters to CRITICAL + HIGH
         all_findings = report.all_findings
         if not all_findings:
             c.print(
@@ -202,10 +284,6 @@ class ConsoleReporter:
                 )
             )
         else:
-            c.print(Rule(f"[bold yellow]Findings ({len(all_findings)} total)[/bold yellow]"))
-            c.print()
-
-            # Sort by severity
             severity_order = [
                 Severity.CRITICAL,
                 Severity.HIGH,
@@ -213,21 +291,44 @@ class ConsoleReporter:
                 Severity.LOW,
                 Severity.INFO,
             ]
-            sorted_findings = sorted(
-                all_findings,
-                key=lambda f: severity_order.index(f.severity),
-            )
+            visible = sorted(all_findings, key=lambda f: severity_order.index(f.severity))
+            if not verbose:
+                visible = [
+                    f for f in visible if f.severity in (Severity.CRITICAL, Severity.HIGH)
+                ]
 
-            for finding in sorted_findings:
-                color = _SEVERITY_COLORS.get(finding.severity, "white")
-                badge = _SEVERITY_EMOJI.get(finding.severity, "[ ]")
-                title = f"{badge} [{color}]{finding.severity.value.upper()}[/{color}] | {finding.test_name}"
-                content = (
-                    f"[bold]{finding.title}[/bold]\n\n"
-                    f"{finding.description}\n\n"
-                    f"[bold]Remediation:[/bold] {finding.remediation}"
+            hidden_count = len(all_findings) - len(visible)
+            if visible:
+                c.print(
+                    Rule(
+                        f"[bold yellow]Findings ({len(visible)} shown / "
+                        f"{len(all_findings)} total)[/bold yellow]"
+                    )
                 )
-                c.print(Panel(content, title=title, border_style=color.split()[-1]))
+                c.print()
+                for finding in visible:
+                    color = _SEVERITY_COLORS.get(finding.severity, "white")
+                    badge = _SEVERITY_EMOJI.get(finding.severity, "[ ]")
+                    title = (
+                        f"{badge} [{color}]{finding.severity.value.upper()}[/{color}] | "
+                        f"{finding.test_name}"
+                    )
+                    arrow_line = ""
+                    if finding.remediation:
+                        arrow_line = f"\n\n[bold cyan]→[/bold cyan] {finding.remediation}"
+                    content = (
+                        f"[bold]{finding.title}[/bold]\n\n"
+                        f"{finding.description}"
+                        f"{arrow_line}"
+                    )
+                    c.print(Panel(content, title=title, border_style=color.split()[-1]))
+                    c.print()
+            if hidden_count:
+                c.print(
+                    f"[dim]({hidden_count} lower-severity finding"
+                    f"{'s' if hidden_count != 1 else ''} hidden — re-run with "
+                    f"--verbose to see them.)[/dim]"
+                )
                 c.print()
 
         # Footer

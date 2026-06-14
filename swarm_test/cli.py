@@ -3,12 +3,41 @@
 from __future__ import annotations
 
 import sys
+import webbrowser
 from pathlib import Path
+from typing import Any
 
 import click
 from rich.console import Console
 
 console = Console()
+
+
+def _resolve_verbosity(
+    quiet: bool,
+    verbose: bool,
+    *,
+    default: Any = "normal",
+) -> Any:
+    """Map --quiet/--verbose flags to a verbosity string.
+
+    Returns ``default`` when neither flag is set. ``--quiet`` wins over
+    ``--verbose`` if both are passed.
+    """
+    if quiet:
+        return "quiet"
+    if verbose:
+        return "verbose"
+    return default
+
+
+def _open_in_browser(path: str) -> None:
+    """Open a local HTML file in the default browser. Failure is non-fatal."""
+    try:
+        url = Path(path).resolve().as_uri()
+        webbrowser.open(url)
+    except Exception as exc:
+        console.print(f"[yellow]Could not open browser ({exc}); open {path} manually.[/yellow]")
 
 
 @click.group()
@@ -41,6 +70,29 @@ def cli() -> None:
     help="Print ASCII agent interaction graph after the report",
 )
 @click.option("--markdown", "-m", default=None, help="Output Markdown report path (e.g. report.md)")
+@click.option(
+    "--quiet",
+    "-q",
+    "quiet",
+    is_flag=True,
+    default=False,
+    help="Print only the headline verdict line.",
+)
+@click.option(
+    "--verbose",
+    "-V",
+    "verbose",
+    is_flag=True,
+    default=False,
+    help="Print every finding plus graph metrics and full health/redundancy tables.",
+)
+@click.option(
+    "--open",
+    "open_report",
+    is_flag=True,
+    default=False,
+    help="Open the generated HTML report in the default browser.",
+)
 def probe(
     script: str,
     output: str | None,
@@ -50,11 +102,16 @@ def probe(
     fail_on_critical: bool,
     graph: bool,
     markdown: str | None,
+    quiet: bool,
+    verbose: bool,
+    open_report: bool,
 ) -> None:
     """Load a Python SCRIPT, extract the swarm object, and run all reliability tests."""
     import importlib.util
 
-    console.print(f"[bold blue]swarm-test probe[/bold blue] — loading [cyan]{script}[/cyan]")
+    verbosity = _resolve_verbosity(quiet, verbose)
+    if verbosity != "quiet":
+        console.print(f"[bold blue]swarm-test probe[/bold blue] — loading [cyan]{script}[/cyan]")
 
     spec = importlib.util.spec_from_file_location("_swarm_script", script)
     if spec is None or spec.loader is None:
@@ -92,9 +149,9 @@ def probe(
         swarm_name=name or Path(script).stem,
     )
     report = probe_obj.run_all()
-    report.print_summary()
+    report.print_summary(verbosity=verbosity)
 
-    if graph:
+    if graph and verbosity != "quiet":
         report.print_graph(graph=probe_obj.graph)
 
     if output:
@@ -102,15 +159,20 @@ def probe(
 
         reporter = HtmlReporter()
         path = reporter.render_with_graph(report, probe_obj.graph, output)
-        console.print(f"\n[green]HTML report saved to:[/green] {path}")
+        if verbosity != "quiet":
+            console.print(f"\n[green]HTML report saved to:[/green] {path}")
+        if open_report:
+            _open_in_browser(path)
 
     if json_output:
         report.to_json(json_output, graph=probe_obj.graph)
-        console.print(f"[green]JSON report saved to:[/green] {json_output}")
+        if verbosity != "quiet":
+            console.print(f"[green]JSON report saved to:[/green] {json_output}")
 
     if markdown:
         report.to_markdown(markdown)
-        console.print(f"[green]Markdown report saved to:[/green] {markdown}")
+        if verbosity != "quiet":
+            console.print(f"[green]Markdown report saved to:[/green] {markdown}")
 
     if fail_on_critical and report.all_findings:
         from swarm_test.core.models import Severity
@@ -150,6 +212,18 @@ def probe(
     default=None,
     help="Exit with code 1 if findings at this severity or above exist",
 )
+@click.option(
+    "--quiet", "-q", "quiet", is_flag=True, default=False,
+    help="Print only the headline verdict line.",
+)
+@click.option(
+    "--verbose", "-V", "verbose", is_flag=True, default=False,
+    help="Print every finding plus graph metrics and full health/redundancy tables.",
+)
+@click.option(
+    "--open", "open_report", is_flag=True, default=False,
+    help="Open the generated HTML report in the default browser.",
+)
 def scan(
     agents: str,
     edges: str,
@@ -159,6 +233,9 @@ def scan(
     markdown: str | None,
     graph: bool,
     fail_on: str | None,
+    quiet: bool,
+    verbose: bool,
+    open_report: bool,
 ) -> None:
     """Quick scan: test any agent topology in seconds, no Python needed.
 
@@ -170,6 +247,8 @@ def scan(
     """
     from swarm_test.core.models import AgentNode, EventType, InteractionEvent, Severity
     from swarm_test.core.probe import SwarmProbe
+
+    verbosity = _resolve_verbosity(quiet, verbose)
 
     # Parse agents
     agent_names = [a.strip() for a in agents.split(",") if a.strip()]
@@ -226,11 +305,12 @@ def scan(
         else:
             console.print(f"[yellow]Skipping invalid edge '{spec}' (use A>B or A<>B)[/yellow]")
 
-    console.print(
-        f"[bold blue]swarm-test scan[/bold blue] — "
-        f"[cyan]{len(agent_nodes)}[/cyan] agents, "
-        f"[cyan]{len(event_list)}[/cyan] edges"
-    )
+    if verbosity != "quiet":
+        console.print(
+            f"[bold blue]swarm-test scan[/bold blue] — "
+            f"[cyan]{len(agent_nodes)}[/cyan] agents, "
+            f"[cyan]{len(event_list)}[/cyan] edges"
+        )
 
     probe_obj = SwarmProbe(
         swarm_name=name,
@@ -238,9 +318,9 @@ def scan(
         events=event_list,
     )
     report = probe_obj.run_all()
-    report.print_summary()
+    report.print_summary(verbosity=verbosity)
 
-    if graph:
+    if graph and verbosity != "quiet":
         report.print_graph(graph=probe_obj.graph)
 
     if html:
@@ -248,15 +328,20 @@ def scan(
 
         reporter = HtmlReporter()
         path = reporter.render_with_graph(report, probe_obj.graph, html)
-        console.print(f"[green]HTML report saved to:[/green] {path}")
+        if verbosity != "quiet":
+            console.print(f"[green]HTML report saved to:[/green] {path}")
+        if open_report:
+            _open_in_browser(path)
 
     if json_output:
         report.to_json(json_output, graph=probe_obj.graph)
-        console.print(f"[green]JSON report saved to:[/green] {json_output}")
+        if verbosity != "quiet":
+            console.print(f"[green]JSON report saved to:[/green] {json_output}")
 
     if markdown:
         report.to_markdown(markdown)
-        console.print(f"[green]Markdown report saved to:[/green] {markdown}")
+        if verbosity != "quiet":
+            console.print(f"[green]Markdown report saved to:[/green] {markdown}")
 
     if fail_on and report.all_findings:
         severity_order = [s.value for s in Severity]
@@ -356,6 +441,18 @@ def scan(
         "Auto-enabled when GITHUB_ACTIONS=true."
     ),
 )
+@click.option(
+    "--quiet", "-q", "quiet", is_flag=True, default=False,
+    help="Print only the headline verdict line (perfect for CI scripts).",
+)
+@click.option(
+    "--verbose", "-V", "verbose", is_flag=True, default=False,
+    help="Print every finding plus graph metrics and full health/redundancy tables.",
+)
+@click.option(
+    "--open", "open_report", is_flag=True, default=False,
+    help="Open the generated HTML report in the default browser (with --output-format html).",
+)
 def run_cmd(
     script: str | None,
     config_path: str | None,
@@ -371,6 +468,9 @@ def run_cmd(
     strict: bool | None,
     contracts_path: str | None,
     github_action: bool,
+    quiet: bool,
+    verbose: bool,
+    open_report: bool,
 ) -> None:
     """Run swarm-test with a YAML config file (auto-discovered) plus optional CLI overrides.
 
@@ -390,10 +490,14 @@ def run_cmd(
         sys.exit(2)
 
     discovered = Path(config_path) if config_path else find_config_path()
-    if discovered is not None:
+    # We'll re-check verbosity after merging CLI overrides; only emit the
+    # "loaded config" dim line outside of quiet mode.
+    _early_verbosity = _resolve_verbosity(quiet, verbose)
+    if discovered is not None and _early_verbosity != "quiet":
         console.print(f"[dim]Loaded config from {discovered}[/dim]")
 
     # ---- Merge CLI overrides ------------------------------------------
+    cli_verbosity = _resolve_verbosity(quiet, verbose, default=None)
     cli_overrides: dict[str, object] = {
         "fail_on_severity": fail_on_severity.lower() if fail_on_severity else None,
         "max_blast_radius": max_blast_radius,
@@ -402,6 +506,7 @@ def run_cmd(
         "quick_scan": quick_scan,
         "strict": strict,
         "contracts_path": contracts_path,
+        "output_verbosity": cli_verbosity,
     }
     try:
         config = merge_cli_args(config, cli_overrides)
@@ -417,7 +522,10 @@ def run_cmd(
     if script:
         import importlib.util
 
-        console.print(f"[bold blue]swarm-test run[/bold blue] — loading [cyan]{script}[/cyan]")
+        if config.output_verbosity != "quiet":
+            console.print(
+                f"[bold blue]swarm-test run[/bold blue] — loading [cyan]{script}[/cyan]"
+            )
         spec = importlib.util.spec_from_file_location("_swarm_script", script)
         if spec is None or spec.loader is None:
             console.print(f"[red]Cannot load script: {script}[/red]")
@@ -505,6 +613,7 @@ def run_cmd(
     # ---- GitHub Actions integration -----------------------------------
     import os as _os
 
+    verbosity_final = config.output_verbosity
     in_github = github_action or _os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
     if in_github:
         from swarm_test.reporters.github import GitHubReporter
@@ -512,40 +621,46 @@ def run_cmd(
         gh_reporter = GitHubReporter()
         gh_reporter.emit_annotations(report)
         summary_path = gh_reporter.write_step_summary(report)
-        if summary_path:
+        if summary_path and verbosity_final != "quiet":
             console.print(f"[dim]GitHub step summary written to {summary_path}[/dim]")
 
     # ---- Emit output ---------------------------------------------------
     fmt = config.output_format
     out = config.output_path
     if fmt == "console":
-        report.print_summary()
+        report.print_summary(verbosity=verbosity_final)
     elif fmt == "json":
-        report.print_summary()
+        report.print_summary(verbosity=verbosity_final)
         target = out or "swarm_report.json"
         report.to_json(target, graph=probe_obj.graph)
-        console.print(f"[green]JSON report saved to:[/green] {target}")
+        if verbosity_final != "quiet":
+            console.print(f"[green]JSON report saved to:[/green] {target}")
     elif fmt == "markdown":
-        report.print_summary()
+        report.print_summary(verbosity=verbosity_final)
         target = out or "swarm_report.md"
         report.to_markdown(target)
-        console.print(f"[green]Markdown report saved to:[/green] {target}")
+        if verbosity_final != "quiet":
+            console.print(f"[green]Markdown report saved to:[/green] {target}")
     elif fmt == "html":
-        report.print_summary()
+        report.print_summary(verbosity=verbosity_final)
         from swarm_test.reporters.html import HtmlReporter
 
         target = out or "swarm_report.html"
         reporter = HtmlReporter()
         path = reporter.render_with_graph(report, probe_obj.graph, target)
-        console.print(f"[green]HTML report saved to:[/green] {path}")
+        if verbosity_final != "quiet":
+            console.print(f"[green]HTML report saved to:[/green] {path}")
+        if open_report:
+            _open_in_browser(path)
 
     # ---- Threshold check ----------------------------------------------
     if SwarmProbe.check_thresholds(config, report):
-        console.print(
-            f"[red]Findings exceed thresholds "
-            f"(fail_on_severity={config.fail_on_severity}, "
-            f"max_blast_radius={config.max_blast_radius}) — exiting with code 1[/red]"
-        )
+        if verbosity_final != "quiet":
+            console.print(
+                f"[red]Findings exceed thresholds "
+                f"(fail_on_severity={config.fail_on_severity}, "
+                f"max_blast_radius={config.max_blast_radius}) — exiting with code 1[/red]"
+            )
         sys.exit(1)
     sys.exit(0)
 

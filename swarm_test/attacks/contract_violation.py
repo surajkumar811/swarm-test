@@ -125,6 +125,41 @@ class ContractViolationTest(BaseAttack):
         affected: list[str] = [event.source_agent_id]
         if event.target_agent_id and event.target_agent_id != event.source_agent_id:
             affected.append(event.target_agent_id)
+
+        # Type-specific, actionable remediation
+        vtype = violation.violation_type
+        if vtype == "missing_required":
+            target = dst_name or result.target_role or "the downstream agent"
+            remediation = (
+                f"Add '{violation.field}' to '{src_name}' output — "
+                f"downstream agent '{target}' requires it."
+            )
+        elif vtype == "type_mismatch":
+            remediation = (
+                f"Change '{violation.field}' from {violation.actual} to "
+                f"{violation.expected} in '{src_name}' output."
+            )
+        elif vtype == "unexpected_field":
+            remediation = (
+                f"Remove unexpected field '{violation.field}' from "
+                f"'{src_name}' output, or extend the contract to allow it."
+            )
+        elif vtype == "null_value":
+            remediation = (
+                f"Replace null '{violation.field}' in '{src_name}' output with "
+                f"a valid {violation.expected} value before sending downstream."
+            )
+        elif vtype == "schema_drift":
+            remediation = (
+                f"Update '{src_name}' output schema to match the registered "
+                f"contract for '{violation.field}' (expected {violation.expected})."
+            )
+        else:
+            remediation = (
+                f"Align '{src_name}' output at '{violation.field}' with the "
+                f"contract (expected {violation.expected})."
+            )
+
         return Finding(
             test_name=self.name,
             severity=severity,
@@ -142,10 +177,7 @@ class ContractViolationTest(BaseAttack):
                 "source_agent": src_name,
                 "target_agent": dst_name,
             },
-            remediation=(
-                "Update the agent's output formatting to match the contract, "
-                "or update the contract to reflect the new expected shape."
-            ),
+            remediation=remediation,
         )
 
     # ------------------------------------------------------------------

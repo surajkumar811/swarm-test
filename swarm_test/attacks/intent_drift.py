@@ -102,8 +102,9 @@ class IntentDriftAttack(BaseAttack):
                             "event_type": event.event_type.value,
                         },
                         remediation=(
-                            "Implement input sanitization and output validation for all "
-                            "inter-agent messages. Use prompt guardrails and role-enforcement layers."
+                            f"Add input sanitisation on '{dst_name}' for messages from "
+                            f"'{src_name}', and reject prompts containing role-override "
+                            f"or 'ignore instructions' phrases."
                         ),
                     )
                 )
@@ -132,8 +133,8 @@ class IntentDriftAttack(BaseAttack):
                         affected_agents=[agent_id],
                         evidence={"violations": violations, "role": role},
                         remediation=(
-                            "Add role-enforcement prompts and output validators. "
-                            "Constrain agent tool access to role-appropriate tools only."
+                            f"Constrain '{agent_name}' tools to those appropriate for "
+                            f"role '{role}', and reject outputs mentioning {sorted(violations)}."
                         ),
                     )
                 )
@@ -220,8 +221,9 @@ class IntentDriftAttack(BaseAttack):
                             "dst_centrality": round(dst_centrality, 3),
                         },
                         remediation=(
-                            "Review delegation patterns. Ensure low-privilege agents cannot "
-                            "invoke high-privilege orchestrator agents without authorization."
+                            f"Break the privilege escalation chain by adding an "
+                            f"approval gate between '{src_name}' and '{dst_name}', or "
+                            f"route through an explicit orchestrator."
                         ),
                     )
                 )

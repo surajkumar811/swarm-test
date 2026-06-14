@@ -23,7 +23,7 @@ from swarm_test.core.models import (
 )
 from swarm_test.core.probe import SwarmProbe
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 __author__ = "swarm-test contributors"
 __license__ = "MIT"
 

@@ -21,6 +21,7 @@ import yaml
 
 VALID_SEVERITIES: tuple[str, ...] = ("critical", "high", "medium", "low", "info", "none")
 VALID_OUTPUT_FORMATS: tuple[str, ...] = ("console", "json", "markdown", "html")
+VALID_OUTPUT_VERBOSITY: tuple[str, ...] = ("quiet", "normal", "verbose")
 VALID_TEST_NAMES: tuple[str, ...] = (
     "cascade",
     "context_leakage",
@@ -95,6 +96,10 @@ class SwarmConfig(BaseModel):
         default=None,
         description="Path to a YAML file of agent output contracts.",
     )
+    output_verbosity: str = Field(
+        default="normal",
+        description="Console verbosity: quiet, normal, or verbose.",
+    )
 
     # ------------------------------------------------------------------
     # Validators
@@ -124,6 +129,17 @@ class SwarmConfig(BaseModel):
         if v_lower not in VALID_OUTPUT_FORMATS:
             raise ValueError(
                 f"output_format must be one of: " f"{', '.join(VALID_OUTPUT_FORMATS)} — got '{v}'"
+            )
+        return v_lower
+
+    @field_validator("output_verbosity")
+    @classmethod
+    def _check_output_verbosity(cls, v: str) -> str:
+        v_lower = v.lower()
+        if v_lower not in VALID_OUTPUT_VERBOSITY:
+            raise ValueError(
+                f"output_verbosity must be one of: "
+                f"{', '.join(VALID_OUTPUT_VERBOSITY)} — got '{v}'"
             )
         return v_lower
 

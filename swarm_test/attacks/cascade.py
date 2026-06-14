@@ -91,8 +91,8 @@ class CascadeFailureAttack(BaseAttack):
                             affected_agents=[agent_id] + downstream,
                             evidence=blast,
                             remediation=(
-                                "Introduce circuit breakers, health checks, and fallback agents "
-                                "to isolate failures. Consider replicating this agent."
+                                f"Add a fallback agent for '{agent_name}' or distribute "
+                                f"its responsibilities across multiple agents."
                             ),
                         )
                     )
