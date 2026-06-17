@@ -22,8 +22,9 @@ from swarm_test.core.models import (
     TestStatus,
 )
 from swarm_test.core.probe import SwarmProbe
+from swarm_test.plugins import BasePlugin, PluginRegistry, PluginResult, discover_plugins
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 __author__ = "swarm-test contributors"
 __license__ = "MIT"
 
@@ -40,4 +41,9 @@ __all__ = [
     "Severity",
     "EventType",
     "TestStatus",
+    # Plugin system
+    "BasePlugin",
+    "PluginResult",
+    "PluginRegistry",
+    "discover_plugins",
 ]

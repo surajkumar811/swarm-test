@@ -16,6 +16,7 @@ from swarm_test.core.models import (
     TestResult,
     TestStatus,
 )
+from swarm_test.plugins.registry import PluginRegistry, discover_plugins
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,8 @@ class SwarmProbe:
         framework: str | None = None,
         config: Any | None = None,
         contracts: Any | None = None,
+        plugin_registry: PluginRegistry | None = None,
+        discover_plugins_on_init: bool = True,
     ) -> None:
         self.swarm = swarm
         self.swarm_name = swarm_name
@@ -49,6 +52,18 @@ class SwarmProbe:
         self._adapter: Any | None = None
         self.config = config
         self.contracts = self._resolve_contracts(contracts, config)
+
+        # Plugin registry — auto-discover unless caller injected one.
+        if plugin_registry is not None:
+            self.plugin_registry = plugin_registry
+        elif discover_plugins_on_init:
+            try:
+                self.plugin_registry = discover_plugins()
+            except Exception as exc:
+                logger.warning("Plugin discovery failed: %s", exc)
+                self.plugin_registry = PluginRegistry()
+        else:
+            self.plugin_registry = PluginRegistry()
 
         # Static graph fallback — supply agents/events directly
         if agents:
@@ -237,6 +252,10 @@ class SwarmProbe:
             result = self.run_test(attack)
             results.append(result)
 
+        # Run plugins (third-party tests) and append their results.
+        plugin_results = self._run_plugins()
+        results.extend(plugin_results)
+
         metrics = self.graph.summary_metrics()
 
         # Compute per-agent health scores
@@ -263,6 +282,96 @@ class SwarmProbe:
             completed_at=datetime.now(timezone.utc),
         )
         return report
+
+    def _run_plugins(self) -> list[TestResult]:
+        """Run all discovered plugins, translating PluginResult → TestResult."""
+        if len(self.plugin_registry) == 0:
+            return []
+
+        builtin_names = {getattr(a, "name", "") for a in self._attacks}
+        enabled: list[str] | None = None
+        disabled: set[str] = set()
+        if self.config is not None:
+            enabled = getattr(self.config, "enabled_tests", None)
+            disabled = set(getattr(self.config, "disabled_tests", []) or [])
+
+        agents = list(self.graph.agents.values())
+        edges = list(self.graph.events)
+
+        results: list[TestResult] = []
+        for plugin in self.plugin_registry.plugins.values():
+            # Skip plugins that collide with a built-in name (defensive — also
+            # blocked at registration).
+            if plugin.name in builtin_names:
+                logger.warning(
+                    "Plugin '%s' collides with built-in test name — skipping.",
+                    plugin.name,
+                )
+                continue
+            # Respect enabled_tests / disabled_tests
+            if plugin.name in disabled:
+                logger.info("Plugin '%s' disabled by config — skipping.", plugin.name)
+                continue
+            if enabled is not None and plugin.name not in enabled:
+                logger.info("Plugin '%s' not in enabled_tests — skipping.", plugin.name)
+                continue
+
+            start = time.perf_counter()
+            started_at = datetime.now(timezone.utc)
+            try:
+                presult = plugin.run(self.graph, agents, edges, self.config)
+                if not hasattr(presult, "test_name") or not hasattr(presult, "findings"):
+                    raise TypeError(
+                        f"Plugin {plugin.name}.run() must return a PluginResult"
+                    )
+                duration = (
+                    presult.duration_ms
+                    if presult.duration_ms > 0
+                    else (time.perf_counter() - start) * 1000
+                )
+                status = (
+                    TestStatus.PASSED
+                    if str(presult.status).lower() == "passed"
+                    else TestStatus.FAILED
+                )
+                results.append(
+                    TestResult(
+                        test_name=presult.test_name or plugin.name,
+                        status=status,
+                        duration_ms=duration,
+                        findings=list(presult.findings),
+                        metrics={
+                            "plugin": True,
+                            "plugin_version": plugin.version,
+                            "plugin_author": plugin.author,
+                            "score": presult.score,
+                        },
+                        started_at=started_at,
+                        completed_at=datetime.now(timezone.utc),
+                    )
+                )
+                logger.info(
+                    "Plugin %s => %s (%d findings, %.1f ms)",
+                    plugin.name,
+                    status.value,
+                    len(presult.findings),
+                    duration,
+                )
+            except Exception as exc:
+                logger.exception("Plugin %s raised an exception", plugin.name)
+                results.append(
+                    TestResult(
+                        test_name=plugin.name,
+                        status=TestStatus.ERROR,
+                        duration_ms=(time.perf_counter() - start) * 1000,
+                        findings=[],
+                        metrics={"plugin": True, "plugin_version": plugin.version},
+                        error=str(exc),
+                        started_at=started_at,
+                        completed_at=datetime.now(timezone.utc),
+                    )
+                )
+        return results
 
     def run_test(self, attack: Any) -> TestResult:
         """Run a single attack/test against the current graph."""

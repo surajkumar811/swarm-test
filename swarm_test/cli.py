@@ -31,6 +31,18 @@ def _resolve_verbosity(
     return default
 
 
+def _announce_plugins(probe_obj: Any, verbosity: str) -> None:
+    """Print 'Loaded N plugin(s)' if the probe discovered any."""
+    if verbosity == "quiet":
+        return
+    try:
+        count = len(probe_obj.plugin_registry)
+    except Exception:
+        return
+    if count > 0:
+        console.print(f"[dim]Loaded {count} plugin(s)[/dim]")
+
+
 def _open_in_browser(path: str) -> None:
     """Open a local HTML file in the default browser. Failure is non-fatal."""
     try:
@@ -148,6 +160,7 @@ def probe(
         swarm,
         swarm_name=name or Path(script).stem,
     )
+    _announce_plugins(probe_obj, verbosity)
     report = probe_obj.run_all()
     report.print_summary(verbosity=verbosity)
 
@@ -328,6 +341,7 @@ def scan(
         agents=list(agent_nodes.values()),
         events=event_list,
     )
+    _announce_plugins(probe_obj, verbosity)
     report = probe_obj.run_all()
     report.print_summary(verbosity=verbosity)
 
@@ -623,6 +637,8 @@ def run_cmd(
         )
         sys.exit(2)
 
+    _announce_plugins(probe_obj, config.output_verbosity)
+
     # ---- Run tests -----------------------------------------------------
     try:
         report = probe_obj.run_all()
@@ -683,6 +699,70 @@ def run_cmd(
             )
         sys.exit(1)
     sys.exit(0)
+
+
+@cli.group("plugins")
+def plugins_group() -> None:
+    """Manage and inspect installed swarm-test plugins."""
+
+
+@plugins_group.command("list")
+def plugins_list() -> None:
+    """List all discovered swarm-test plugins."""
+    from swarm_test.plugins import discover_plugins
+
+    registry = discover_plugins()
+    plugins = registry.list_plugins()
+    if not plugins:
+        console.print(
+            "[yellow]No swarm-test plugins discovered.[/yellow]\n"
+            "[dim]Install a plugin package (it must declare a "
+            "'swarm_test.plugins' entry point).[/dim]"
+        )
+        return
+
+    from rich.table import Table
+
+    table = Table(title=f"Discovered Plugins ({len(plugins)})", show_lines=False)
+    table.add_column("Name", style="bold cyan")
+    table.add_column("Version", style="magenta")
+    table.add_column("Author", style="dim")
+    table.add_column("Description")
+    for p in plugins:
+        table.add_row(
+            p.get("name", ""),
+            p.get("version", ""),
+            p.get("author", "") or "—",
+            p.get("description", ""),
+        )
+    console.print(table)
+
+
+@plugins_group.command("info")
+@click.argument("name")
+def plugins_info(name: str) -> None:
+    """Show detailed information about a single plugin by NAME."""
+    from swarm_test.plugins import discover_plugins
+
+    registry = discover_plugins()
+    plugin = registry.get(name)
+    if plugin is None:
+        console.print(f"[red]Plugin '{name}' not found.[/red]")
+        installed = [p["name"] for p in registry.list_plugins()]
+        if installed:
+            console.print(f"[dim]Installed plugins: {', '.join(installed)}[/dim]")
+        sys.exit(1)
+
+    from rich.panel import Panel
+
+    body = (
+        f"[bold]Name:[/bold] {plugin.name}\n"
+        f"[bold]Version:[/bold] {plugin.version}\n"
+        f"[bold]Author:[/bold] {plugin.author or '—'}\n"
+        f"[bold]Description:[/bold] {plugin.description}\n"
+        f"[bold]Class:[/bold] {type(plugin).__module__}.{type(plugin).__name__}"
+    )
+    console.print(Panel(body, title=f"[bold]{plugin.name}[/bold]", border_style="cyan"))
 
 
 @cli.command("compare")

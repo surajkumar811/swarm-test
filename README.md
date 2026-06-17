@@ -398,6 +398,62 @@ Interactive D3.js force-directed graph showing agent nodes, interaction edges, a
 
 ---
 
+## Plugin System
+
+Ship custom reliability tests as installable Python packages. swarm-test
+auto-discovers anything registered under the `swarm_test.plugins`
+entry-point group and runs it alongside the built-in chaos tests — the
+findings show up in the console, JSON, Markdown, and HTML reports.
+
+### Write a plugin in 10 lines
+
+```python
+from swarm_test.plugins import BasePlugin, PluginResult
+
+
+class MyPlugin(BasePlugin):
+    name = "my_custom_test"
+    version = "0.1.0"
+    description = "Checks for X"
+
+    def run(self, graph, agents, edges, config):
+        findings = []
+        # your test logic here
+        return PluginResult(
+            test_name=self.name,
+            status="passed" if not findings else "failed",
+            score=100,
+            findings=findings,
+            duration_ms=0.0,
+        )
+```
+
+### Register the plugin
+
+In your plugin package's `pyproject.toml`:
+
+```toml
+[project.entry-points."swarm_test.plugins"]
+my_custom_test = "my_package.plugins:MyPlugin"
+```
+
+Then install it in the same environment as `swarm-test`:
+
+```bash
+pip install -e .
+swarm-test plugins list   # → my_custom_test  0.1.0   Checks for X
+swarm-test plugins info my_custom_test
+```
+
+From this point on every `swarm-test run`, `probe`, and `scan` will execute
+your plugin and report its findings.
+
+Need a working starting point? See
+[`examples/plugin_template/`](examples/plugin_template/) for a fully
+runnable plugin package, and
+[`examples/example_plugin.py`](examples/example_plugin.py) for a
+single-file edge-count check.
+
 ## Extending
 
 ### Custom attack

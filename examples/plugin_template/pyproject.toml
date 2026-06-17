@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "swarm-test-plugin-example"
+version = "0.1.0"
+description = "A minimal example plugin for swarm-test"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "swarm-test contributors" }]
+dependencies = [
+    "swarm-test>=0.3.2",
+]
+
+[project.entry-points."swarm_test.plugins"]
+example = "swarm_test_plugin_example:ExamplePlugin"
+
+[tool.hatch.build.targets.wheel]
+packages = ["swarm_test_plugin_example"]

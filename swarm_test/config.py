@@ -146,25 +146,14 @@ class SwarmConfig(BaseModel):
     @field_validator("enabled_tests")
     @classmethod
     def _check_enabled(cls, v: list[str] | None) -> list[str] | None:
-        if v is None:
-            return None
-        for name in v:
-            if name not in VALID_TEST_NAMES:
-                raise ValueError(
-                    f"Unknown test in enabled_tests: '{name}' — "
-                    f"valid names: {', '.join(VALID_TEST_NAMES)}"
-                )
+        # Names outside VALID_TEST_NAMES are assumed to refer to third-party
+        # plugins and are passed through without error.
         return v
 
     @field_validator("disabled_tests")
     @classmethod
     def _check_disabled(cls, v: list[str]) -> list[str]:
-        for name in v:
-            if name not in VALID_TEST_NAMES:
-                raise ValueError(
-                    f"Unknown test in disabled_tests: '{name}' — "
-                    f"valid names: {', '.join(VALID_TEST_NAMES)}"
-                )
+        # Plugin names are allowed alongside built-in test names.
         return v
 
     @field_validator("timeout_seconds")
