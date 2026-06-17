@@ -113,10 +113,10 @@ class PluginRegistry:
         and never propagate.
         """
         try:
-            eps = entry_points(group=ENTRY_POINT_GROUP)
+            eps: Any = entry_points(group=ENTRY_POINT_GROUP)
         except TypeError:
             # Older Python (<3.10) returns a dict-like SelectableGroups
-            eps = entry_points().get(ENTRY_POINT_GROUP, [])  # type: ignore[assignment]
+            eps = entry_points().get(ENTRY_POINT_GROUP, [])  # type: ignore[attr-defined]
 
         for ep in eps:
             try:
@@ -164,28 +164,25 @@ class PluginRegistry:
         """
         results: list[PluginResult] = []
         # Respect config-driven enable/disable filtering for plugin names too
-        active = None
+        enabled_set: set[str] | None = None
+        disabled_set: set[str] = set()
         if config is not None:
             try:
-                base = (
-                    set(config.enabled_tests)
-                    if getattr(config, "enabled_tests", None) is not None
-                    else None
-                )
-                disabled = set(getattr(config, "disabled_tests", []) or [])
-                active = (base, disabled)
+                enabled_tests = getattr(config, "enabled_tests", None)
+                if enabled_tests is not None:
+                    enabled_set = set(enabled_tests)
+                disabled_set = set(getattr(config, "disabled_tests", []) or [])
             except Exception:
-                active = None
+                enabled_set = None
+                disabled_set = set()
 
         for plugin in self._plugins.values():
-            if active is not None:
-                base, disabled = active
-                if base is not None and plugin.name not in base:
-                    logger.debug("Plugin %s skipped (not in enabled_tests)", plugin.name)
-                    continue
-                if plugin.name in disabled:
-                    logger.debug("Plugin %s skipped (in disabled_tests)", plugin.name)
-                    continue
+            if enabled_set is not None and plugin.name not in enabled_set:
+                logger.debug("Plugin %s skipped (not in enabled_tests)", plugin.name)
+                continue
+            if plugin.name in disabled_set:
+                logger.debug("Plugin %s skipped (in disabled_tests)", plugin.name)
+                continue
 
             start = time.perf_counter()
             try:
@@ -198,7 +195,7 @@ class PluginRegistry:
                 if result.duration_ms <= 0.0:
                     result.duration_ms = (time.perf_counter() - start) * 1000
                 results.append(result)
-            except Exception as exc:
+            except Exception:
                 logger.exception("Plugin %s raised an exception", plugin.name)
                 results.append(
                     PluginResult(

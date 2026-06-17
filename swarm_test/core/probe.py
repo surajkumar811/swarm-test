@@ -321,9 +321,7 @@ class SwarmProbe:
             try:
                 presult = plugin.run(self.graph, agents, edges, self.config)
                 if not hasattr(presult, "test_name") or not hasattr(presult, "findings"):
-                    raise TypeError(
-                        f"Plugin {plugin.name}.run() must return a PluginResult"
-                    )
+                    raise TypeError(f"Plugin {plugin.name}.run() must return a PluginResult")
                 duration = (
                     presult.duration_ms
                     if presult.duration_ms > 0
