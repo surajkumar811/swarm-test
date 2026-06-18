@@ -211,12 +211,18 @@ def to_dot(
     lines.append("    subgraph cluster_legend {")
     lines.append('        label="Legend";')
     lines.append('        style="dashed";')
-    lines.append('        legend_spof [label="SPOF", fillcolor="#ff4444", '
-                 'color="#cc0000", fontcolor="white"];')
-    lines.append('        legend_moderate [label="Moderate", fillcolor="#ffaa00", '
-                 'color="#cc8800", fontcolor="white"];')
-    lines.append('        legend_healthy [label="Healthy", fillcolor="#44cc44", '
-                 'color="#22aa22", fontcolor="white"];')
+    lines.append(
+        '        legend_spof [label="SPOF", fillcolor="#ff4444", '
+        'color="#cc0000", fontcolor="white"];'
+    )
+    lines.append(
+        '        legend_moderate [label="Moderate", fillcolor="#ffaa00", '
+        'color="#cc8800", fontcolor="white"];'
+    )
+    lines.append(
+        '        legend_healthy [label="Healthy", fillcolor="#44cc44", '
+        'color="#22aa22", fontcolor="white"];'
+    )
     lines.append("    }")
 
     lines.append("}")
@@ -261,7 +267,7 @@ def to_png(
         "moderate": "#ffaa00",
     }
 
-    simple_g = nx.DiGraph()
+    simple_g: nx.DiGraph = nx.DiGraph()
     for nid in g.nodes():
         simple_g.add_node(nid, **g.nodes[nid])
     for src, dst in g.edges():
@@ -296,13 +302,24 @@ def to_png(
     ax.set_title(title, fontsize=14, fontweight="bold")
 
     nx.draw_networkx_nodes(
-        simple_g, pos, node_color=colors, node_size=sizes,
-        edgecolors="#333333", linewidths=1.5, ax=ax,
+        simple_g,
+        pos,
+        node_color=colors,
+        node_size=sizes,
+        edgecolors="#333333",
+        linewidths=1.5,
+        ax=ax,
     )
     nx.draw_networkx_edges(
-        simple_g, pos, edge_color="#666666", width=1.2,
-        arrows=True, arrowsize=18, arrowstyle="->",
-        connectionstyle="arc3,rad=0.08", ax=ax,
+        simple_g,
+        pos,
+        edge_color="#666666",
+        width=1.2,
+        arrows=True,
+        arrowsize=18,
+        arrowstyle="->",
+        connectionstyle="arc3,rad=0.08",
+        ax=ax,
     )
     nx.draw_networkx_labels(simple_g, pos, labels=labels, font_size=10, ax=ax)
 

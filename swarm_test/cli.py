@@ -949,9 +949,7 @@ def graph_cmd(
             events=event_list,
         )
     else:
-        console.print(
-            "[red]Provide either a SCRIPT path or both --agents and --edges.[/red]"
-        )
+        console.print("[red]Provide either a SCRIPT path or both --agents and --edges.[/red]")
         sys.exit(2)
 
     report = probe_obj.run_all()
