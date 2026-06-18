@@ -20,7 +20,15 @@ except ImportError:  # pragma: no cover - py3.10 fallback
 import yaml
 
 VALID_SEVERITIES: tuple[str, ...] = ("critical", "high", "medium", "low", "info", "none")
-VALID_OUTPUT_FORMATS: tuple[str, ...] = ("console", "json", "markdown", "html")
+VALID_OUTPUT_FORMATS: tuple[str, ...] = (
+    "console",
+    "json",
+    "markdown",
+    "html",
+    "mermaid",
+    "dot",
+    "png",
+)
 VALID_OUTPUT_VERBOSITY: tuple[str, ...] = ("quiet", "normal", "verbose")
 VALID_TEST_NAMES: tuple[str, ...] = (
     "cascade",

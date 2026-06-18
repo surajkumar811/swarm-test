@@ -429,7 +429,10 @@ def scan(
 )
 @click.option(
     "--output-format",
-    type=click.Choice(["console", "json", "markdown", "html"], case_sensitive=False),
+    type=click.Choice(
+        ["console", "json", "markdown", "html", "mermaid", "dot", "png"],
+        case_sensitive=False,
+    ),
     default=None,
     help="Override config: output format",
 )
@@ -688,6 +691,34 @@ def run_cmd(
             console.print(f"[green]HTML report saved to:[/green] {path}")
         if open_report:
             _open_in_browser(path)
+    elif fmt in ("mermaid", "dot"):
+        from swarm_test.reporters import graph_export
+
+        text = (
+            graph_export.to_mermaid(probe_obj.graph, report=report)
+            if fmt == "mermaid"
+            else graph_export.to_dot(probe_obj.graph, report=report)
+        )
+        if out:
+            with open(out, "w") as f:
+                f.write(text)
+            if verbosity_final != "quiet":
+                console.print(f"[green]{fmt.upper()} graph saved to:[/green] {out}")
+        else:
+            console.print(text)
+    elif fmt == "png":
+        from swarm_test.reporters import graph_export
+
+        if not out:
+            console.print("[red]--output-path is required for PNG export.[/red]")
+            sys.exit(2)
+        try:
+            graph_export.to_png(probe_obj.graph, report=report, output_path=out)
+        except ImportError as exc:
+            console.print(f"[red]{exc}[/red]")
+            sys.exit(2)
+        if verbosity_final != "quiet":
+            console.print(f"[green]PNG graph saved to:[/green] {out}")
 
     # ---- Threshold check ----------------------------------------------
     if SwarmProbe.check_thresholds(config, report):
@@ -782,6 +813,173 @@ def compare(before: str, after: str) -> None:
     comparator = ReportComparator()
     result = comparator.compare(before_data, after_data)
     comparator.print_comparison(result, console)
+
+
+@cli.command("graph")
+@click.argument(
+    "script",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False),
+    required=False,
+)
+@click.option(
+    "--agents",
+    "-a",
+    default=None,
+    help="Comma-separated agent names (use instead of a script)",
+)
+@click.option(
+    "--edges",
+    "-e",
+    default=None,
+    help="Comma-separated edges: 'A>B' for one-way, 'A<>B' for bidirectional",
+)
+@click.option(
+    "--format",
+    "-f",
+    "fmt",
+    type=click.Choice(["mermaid", "dot", "png"], case_sensitive=False),
+    default="mermaid",
+    show_default=True,
+    help="Export format for the dependency graph",
+)
+@click.option(
+    "--output",
+    "-o",
+    "output_path",
+    default=None,
+    help="Output file path (required for png; stdout for mermaid/dot if omitted)",
+)
+@click.option(
+    "--swarm-var",
+    default="crew",
+    show_default=True,
+    help="Variable name of the swarm object in the script",
+)
+@click.option("--name", default="graph-export", show_default=True, help="Swarm name")
+def graph_cmd(
+    script: str | None,
+    agents: str | None,
+    edges: str | None,
+    fmt: str,
+    output_path: str | None,
+    swarm_var: str,
+    name: str,
+) -> None:
+    """Export the agent interaction graph as Mermaid, DOT, or PNG.
+
+    \b
+    Examples:
+      swarm-test graph --agents "A,B,C" --edges "A>B,B>C" --format mermaid
+      swarm-test graph my_crew.py --format png --output graph.png
+      swarm-test graph my_crew.py --format dot --output topology.dot
+    """
+    from swarm_test.core.models import AgentNode, EventType, InteractionEvent
+    from swarm_test.core.probe import SwarmProbe
+    from swarm_test.reporters import graph_export
+
+    probe_obj: SwarmProbe
+    if script:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("_swarm_script", script)
+        if spec is None or spec.loader is None:
+            console.print(f"[red]Cannot load script: {script}[/red]")
+            sys.exit(2)
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)  # type: ignore[union-attr]
+        except Exception as exc:
+            console.print(f"[red]Error executing script: {exc}[/red]")
+            sys.exit(2)
+        swarm = getattr(module, swarm_var, None)
+        if swarm is None:
+            for fallback in ("groupchat", "manager", "group_chat", "swarm", "graph", "agents"):
+                candidate = getattr(module, fallback, None)
+                if candidate is not None:
+                    swarm = candidate
+                    break
+        probe_obj = SwarmProbe(
+            swarm,
+            swarm_name=name if name != "graph-export" else Path(script).stem,
+        )
+    elif agents and edges:
+        agent_nodes: dict[str, AgentNode] = {}
+        for ag in (a.strip() for a in agents.split(",") if a.strip()):
+            agent_nodes[ag] = AgentNode(name=ag, role="unknown")
+
+        def _ensure(n: str) -> AgentNode:
+            if n not in agent_nodes:
+                agent_nodes[n] = AgentNode(name=n, role="unknown")
+            return agent_nodes[n]
+
+        event_list: list[InteractionEvent] = []
+        for spec_str in (e.strip() for e in edges.split(",") if e.strip()):
+            if "<>" in spec_str:
+                parts = spec_str.split("<>", 1)
+                s_node = _ensure(parts[0].strip())
+                d_node = _ensure(parts[1].strip())
+                event_list.append(
+                    InteractionEvent(
+                        source_agent_id=s_node.id,
+                        target_agent_id=d_node.id,
+                        event_type=EventType.TASK_DELEGATE,
+                    )
+                )
+                event_list.append(
+                    InteractionEvent(
+                        source_agent_id=d_node.id,
+                        target_agent_id=s_node.id,
+                        event_type=EventType.AGENT_RESPONSE,
+                    )
+                )
+            elif ">" in spec_str:
+                parts = spec_str.split(">", 1)
+                s_node = _ensure(parts[0].strip())
+                d_node = _ensure(parts[1].strip())
+                event_list.append(
+                    InteractionEvent(
+                        source_agent_id=s_node.id,
+                        target_agent_id=d_node.id,
+                        event_type=EventType.TASK_DELEGATE,
+                    )
+                )
+        probe_obj = SwarmProbe(
+            swarm_name=name,
+            agents=list(agent_nodes.values()),
+            events=event_list,
+        )
+    else:
+        console.print(
+            "[red]Provide either a SCRIPT path or both --agents and --edges.[/red]"
+        )
+        sys.exit(2)
+
+    report = probe_obj.run_all()
+
+    fmt = fmt.lower()
+    if fmt == "png":
+        if not output_path:
+            console.print("[red]--output is required for png format.[/red]")
+            sys.exit(2)
+        try:
+            graph_export.to_png(probe_obj.graph, report=report, output_path=output_path)
+        except ImportError as exc:
+            console.print(f"[red]{exc}[/red]")
+            sys.exit(2)
+        console.print(f"[green]PNG graph saved to:[/green] {output_path}")
+        return
+
+    text = (
+        graph_export.to_mermaid(probe_obj.graph, report=report)
+        if fmt == "mermaid"
+        else graph_export.to_dot(probe_obj.graph, report=report)
+    )
+    if output_path:
+        with open(output_path, "w") as f:
+            f.write(text)
+        console.print(f"[green]{fmt.upper()} graph saved to:[/green] {output_path}")
+    else:
+        console.print(text)
 
 
 @cli.command("version")

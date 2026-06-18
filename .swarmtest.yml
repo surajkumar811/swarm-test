@@ -1,6 +1,0 @@
-fail_on_severity: high
-enabled_tests:
-  - cascade
-  - blast_radius
-  - contract_violation
-output_format: console

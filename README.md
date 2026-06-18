@@ -100,6 +100,56 @@ offending edge.
 
 ---
 
+## Graph Export
+
+Export your agent topology as **Mermaid**, **DOT**, or **PNG** to drop straight
+into docs, wikis, or pull-request descriptions. SPOFs are coloured red,
+moderate-redundancy agents orange, and fully redundant agents green — every
+viewer can spot the risk at a glance.
+
+```bash
+# Mermaid (great for GitHub READMEs — renders inline)
+swarm-test graph my_crew.py --format mermaid
+
+# Save to a file
+swarm-test graph my_crew.py --format mermaid --output topology.mmd
+swarm-test graph my_crew.py --format dot --output topology.dot
+
+# PNG (requires matplotlib)
+pip install "swarm-test[png]"
+swarm-test graph my_crew.py --format png --output topology.png
+```
+
+Or build a graph straight from the CLI with no Python script:
+
+```bash
+swarm-test graph --agents "Hub,W1,W2,W3" \
+                 --edges "Hub<>W1,Hub<>W2,Hub<>W3" \
+                 --format mermaid
+```
+
+Example Mermaid output (renders directly on GitHub):
+
+```mermaid
+graph TD
+    Hub[Hub ⚠️ SPOF]:::spof
+    W1[Worker1]:::healthy
+    W2[Worker2]:::healthy
+    W3[Worker3]:::healthy
+    Hub --> W1
+    Hub --> W2
+    Hub --> W3
+    classDef spof fill:#ff4444,stroke:#cc0000,color:#fff
+    classDef healthy fill:#44cc44,stroke:#22aa22,color:#fff
+    classDef moderate fill:#ffaa00,stroke:#cc8800,color:#fff
+```
+
+The same formats are also available via `swarm-test run --output-format
+{mermaid,dot,png} --output-path …`, so you can wire graph export into a
+single CI run alongside the JSON / HTML reports.
+
+---
+
 ## Features
 
 | Test | What it checks |
