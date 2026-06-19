@@ -62,6 +62,8 @@ class AgentNode(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_active: bool = True
+    classified_role: str = "UNKNOWN"
+    role_confidence: float = 0.0
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -151,6 +153,7 @@ class SwarmReport(BaseModel):
     graph_metrics: dict[str, Any] = Field(default_factory=dict)
     agent_scores: dict[str, Any] = Field(default_factory=dict)
     redundancy_scores: dict[str, float] = Field(default_factory=dict)
+    agent_roles: dict[str, dict[str, Any]] = Field(default_factory=dict)
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime | None = None
 
@@ -382,6 +385,24 @@ class SwarmReport(BaseModel):
                     "level": redundancy_level(float(r_score)),
                 }
             )
+
+        # Per-agent classified roles export
+        from swarm_test.core.taxonomy import RISK_PROFILES
+
+        agent_roles_json: list[dict[str, Any]] = []
+        for aid, role_info in self.agent_roles.items():
+            score_obj = self.agent_scores.get(aid)
+            name = score_obj.agent_name if score_obj else aid
+            classified = role_info.get("role", "UNKNOWN")
+            agent_roles_json.append(
+                {
+                    "agent_id": aid,
+                    "agent_name": name,
+                    "role": classified,
+                    "confidence": round(float(role_info.get("confidence", 0.0)), 2),
+                    "profile": RISK_PROFILES.get(classified, {}),
+                }
+            )
         overall_redundancy = (
             round(
                 sum(float(r) for r in self.redundancy_scores.values())
@@ -411,6 +432,7 @@ class SwarmReport(BaseModel):
             "agent_health": agent_health_json,
             "redundancy_scores": redundancy_json,
             "overall_redundancy": overall_redundancy,
+            "agent_roles": agent_roles_json,
             "test_results": [
                 {
                     "test_name": r.test_name,

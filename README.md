@@ -160,6 +160,47 @@ single CI run alongside the JSON / HTML reports.
 | **Collusion Detection** | Dense cliques, echo chambers, orchestrator-bypass cycles |
 | **Blast Radius** | Single points of failure, critical path, redundancy score |
 
+### Agent Role Taxonomy
+
+swarm-test auto-classifies every agent by its role in the interaction graph
+— combining structural metrics (in/out degree, betweenness centrality) with
+naming hints. Every classification carries a 0-100% confidence score.
+
+| Role | What it means |
+|---|---|
+| **ORCHESTRATOR** | Routes work to many agents — high out-degree, high betweenness |
+| **AGGREGATOR** | Collects from many agents — high in-degree, low out-degree |
+| **VALIDATOR** | Checks / approves outputs — security-sensitive |
+| **GATEWAY** | Entry or exit boundary — pure source or pure sink |
+| **WORKER** | Does the actual task work — leaf-ish, low out-degree |
+| **MONITOR** | Observes others — broad connections off the critical path |
+| **ROUTER** | Intermediate hop — balanced in/out degree |
+| **UNKNOWN** | Can't classify confidently |
+
+**Role-adjusted severity.** An orchestrator with high blast radius is
+*expected* — that's its job. A worker with high blast radius is a design
+smell — workers shouldn't have wide downstream impact. A validator that
+leaks context is a security incident. swarm-test knows the difference and
+adjusts severity accordingly: orchestrator/aggregator blast findings are
+downgraded one level (it's by design), while validator context-leakage
+findings are upgraded one level (security-sensitive).
+
+```
+                       Agent Roles
+╭───────────────────────────────────────────────────────────────────────╮
+│ Agent            Role            Confidence   Profile                 │
+│ Orchestrator     ORCHESTRATOR    95%          critical, needs fallback│
+│ Worker1          WORKER          88%          standard                │
+│ ValidatorAgent   VALIDATOR       92%          security-sensitive      │
+│ HealthMonitor    MONITOR         85%          standard                │
+╰───────────────────────────────────────────────────────────────────────╯
+```
+
+The classification is also exported in JSON (`agent_roles`) and on every
+node of the HTML report (role badge + tooltip).
+
+---
+
 ### Redundancy Scoring
 
 Every agent gets a **0-100 redundancy score** that quantifies how replaceable it is:

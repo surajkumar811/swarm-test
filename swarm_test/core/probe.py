@@ -269,6 +269,24 @@ class SwarmProbe:
             if agent_id in agent_scores:
                 agent_scores[agent_id].redundancy_score = r_score
 
+        # Classify each agent by its role in the graph (orchestrator, worker, etc.)
+        from swarm_test.core.taxonomy import classify_all
+
+        role_map = classify_all(
+            self.graph.graph,
+            agents=self.graph.agents,
+            edges=self.graph.events,
+        )
+        agent_roles: dict[str, dict[str, Any]] = {
+            aid: {"role": role, "confidence": confidence}
+            for aid, (role, confidence) in role_map.items()
+        }
+        for aid, info in agent_roles.items():
+            agent_obj = self.graph.agents.get(aid)
+            if agent_obj is not None:
+                agent_obj.classified_role = info["role"]
+                agent_obj.role_confidence = info["confidence"]
+
         report = SwarmReport(
             swarm_name=self.swarm_name,
             framework=self._framework,
@@ -278,6 +296,7 @@ class SwarmProbe:
             graph_metrics=metrics,
             agent_scores=agent_scores,
             redundancy_scores=redundancy_scores,
+            agent_roles=agent_roles,
             started_at=started,
             completed_at=datetime.now(timezone.utc),
         )

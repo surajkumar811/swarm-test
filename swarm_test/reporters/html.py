@@ -350,6 +350,14 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   .badge-failed   { background: rgba(239,68,68,0.15); color: var(--fail); }
   .badge-error    { background: rgba(249,115,22,0.15); color: var(--high); }
   .badge-spof     { background: rgba(239,68,68,0.18); color: var(--critical); }
+  .badge-role-orchestrator { background: rgba(34,211,238,0.15); color: var(--accent-2); }
+  .badge-role-aggregator   { background: rgba(34,211,238,0.15); color: var(--accent-2); }
+  .badge-role-gateway      { background: rgba(99,102,241,0.18); color: var(--accent); }
+  .badge-role-validator    { background: rgba(234,179,8,0.15); color: var(--medium); }
+  .badge-role-router       { background: rgba(148,163,184,0.18); color: var(--muted); }
+  .badge-role-worker       { background: rgba(148,163,184,0.12); color: var(--text); }
+  .badge-role-monitor      { background: rgba(107,114,128,0.18); color: var(--muted); }
+  .badge-role-unknown      { background: rgba(107,114,128,0.18); color: var(--muted); }
 
   /* FINDINGS -------------------------------------------------------------- */
   .filter-bar {
@@ -593,6 +601,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
       <thead>
         <tr>
           <th data-sort="text">Agent</th>
+          <th data-sort="text">Inferred Role</th>
           <th data-sort="num">Health Score</th>
           <th data-sort="text">Status</th>
           <th data-sort="text">Details</th>
@@ -600,8 +609,13 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
       </thead>
       <tbody>
         {% for hs in agent_scores %}
+        {% set role_info = agent_roles_lookup.get(hs.agent_id, {}) %}
         <tr class="expandable" data-agent-id="{{ hs.agent_id }}" onclick="toggleAgentDetail(this)">
           <td><b>{{ hs.agent_name }}</b> <span class="pill">{{ hs.role }}</span></td>
+          <td>
+            <span class="badge badge-role-{{ (role_info.role or 'UNKNOWN') | lower }}">{{ role_info.role or 'UNKNOWN' }}</span>
+            <span class="pill">{{ ((role_info.confidence or 0.0) * 100) | round(0, 'floor') | int }}%</span>
+          </td>
           <td>
             <div class="score-bar-wrap">
               <span style="min-width:46px; color:{{ health_color(hs.score) }};"><b>{{ hs.score }}</b>/100</span>
@@ -907,6 +921,14 @@ document.querySelectorAll('.heatmap-table td.cell').forEach(cell => {
     .attr('fill', '#0b1020').attr('font-size', '10px').attr('font-weight', 700)
     .text(d => (d.name || d.id).substring(0, 12));
 
+  nodeG.append('text')
+    .attr('text-anchor', 'middle')
+    .attr('dy', d => (16 + Math.min((d.degree || 0) * 2, 12)) + 14)
+    .attr('fill', '#94a3b8')
+    .attr('font-size', '9px')
+    .attr('font-weight', 600)
+    .text(d => d.classified_role && d.classified_role !== 'UNKNOWN' ? d.classified_role : '');
+
   function healthFill(s) {
     if (s == null) return '#94a3b8';
     if (s >= 70) return '#22c55e';
@@ -918,6 +940,8 @@ document.querySelectorAll('.heatmap-table td.cell').forEach(cell => {
     .on('mouseover', (e, d) => {
       tooltip.innerHTML = '<b>' + escapeHtml(d.name || d.id) + '</b><br>'
         + 'Role: ' + escapeHtml(d.role || 'unknown') + '<br>'
+        + 'Inferred: ' + escapeHtml(d.classified_role || 'UNKNOWN')
+        + ' (' + Math.round((d.role_confidence || 0) * 100) + '%)<br>'
         + 'Health: ' + (d.health_score == null ? '—' : d.health_score + '/100') + '<br>'
         + 'Redundancy: ' + (d.redundancy_score == null ? '—' : Math.round(d.redundancy_score) + '/100')
         + (d.tools && d.tools.length ? '<br>Tools: ' + escapeHtml(d.tools.join(', ')) : '')
@@ -1064,6 +1088,7 @@ class HtmlReporter:
         # ---- Enrich nodes for D3 ------------------------------------
         nodes_for_js: list[dict[str, Any]] = []
         agent_name_lookup: dict[str, str] = {}
+        agent_roles = report.agent_roles or {}
         for n in nodes_raw:
             nid = str(n.get("id", ""))
             name = str(n.get("name", nid))
@@ -1075,11 +1100,14 @@ class HtmlReporter:
                 tlist = meta.get("tools")
                 if isinstance(tlist, (list, tuple)):
                     tools = [str(t) for t in tlist]
+            role_info = agent_roles.get(nid, {})
             nodes_for_js.append(
                 {
                     "id": nid,
                     "name": name,
                     "role": n.get("role", "unknown"),
+                    "classified_role": role_info.get("role", "UNKNOWN"),
+                    "role_confidence": float(role_info.get("confidence", 0.0)),
                     "health_score": getattr(hs, "score", None) if hs else None,
                     "redundancy_score": getattr(hs, "redundancy_score", None) if hs else None,
                     "is_spof": nid in spof_ids,
@@ -1191,6 +1219,7 @@ class HtmlReporter:
             heatmap_agents=heatmap_agents_view,
             heatmap_grid=heatmap_grid,
             agent_name_lookup=agent_name_lookup,
+            agent_roles_lookup=dict(agent_roles),
             severity_counts=severity_counts,
             certification_level=level,
             level_color=level_color,

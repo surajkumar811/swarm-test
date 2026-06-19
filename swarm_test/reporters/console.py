@@ -56,6 +56,18 @@ _LEVEL_STYLE = {
 _VALID_VERBOSITY = {"quiet", "normal", "verbose"}
 
 
+_ROLE_COLORS = {
+    "ORCHESTRATOR": "bold cyan",
+    "AGGREGATOR": "cyan",
+    "GATEWAY": "cyan",
+    "VALIDATOR": "yellow",
+    "ROUTER": "white",
+    "WORKER": "white",
+    "MONITOR": "dim",
+    "UNKNOWN": "dim",
+}
+
+
 def _normalise_verbosity(v: str | None) -> str:
     if v is None:
         return "normal"
@@ -115,6 +127,57 @@ class ConsoleReporter:
     # ------------------------------------------------------------------
     # Body rendering
     # ------------------------------------------------------------------
+
+    def _render_agent_roles(self, report: SwarmReport, *, verbose: bool) -> None:
+        """Render the inferred agent role taxonomy table."""
+        from swarm_test.core.taxonomy import RISK_PROFILES
+
+        c = self.console
+        rows: list[tuple[str, str, float, dict[str, Any]]] = []
+        for aid, info in report.agent_roles.items():
+            role = info.get("role", "UNKNOWN")
+            conf = float(info.get("confidence", 0.0))
+            score_obj = report.agent_scores.get(aid)
+            name = score_obj.agent_name if score_obj is not None else aid
+            profile = RISK_PROFILES.get(role, {})
+            rows.append((name, role, conf, profile))
+        if not rows:
+            return
+
+        rows.sort(key=lambda r: (-r[2], r[0]))
+
+        c.print(Rule("[bold cyan]Agent Roles[/bold cyan]"))
+        c.print()
+        roles_table = Table(
+            box=box.ROUNDED,
+            show_header=True,
+            header_style="bold cyan",
+        )
+        roles_table.add_column("Agent", style="bold", width=28)
+        roles_table.add_column("Role", width=14)
+        roles_table.add_column("Confidence", width=12, justify="center")
+        roles_table.add_column("Profile", min_width=30)
+
+        for name, role, conf, profile in rows:
+            role_style = _ROLE_COLORS.get(role, "white")
+            tags: list[str] = []
+            if profile.get("critical"):
+                tags.append("critical")
+            if profile.get("needs_fallback"):
+                tags.append("needs fallback")
+            if profile.get("security_sensitive"):
+                tags.append("security-sensitive")
+            if profile.get("expected_high_blast_radius"):
+                tags.append("expected high blast")
+            profile_str = ", ".join(tags) if tags else "standard"
+            roles_table.add_row(
+                name,
+                Text(role, style=role_style),
+                f"{int(round(conf * 100))}%",
+                Text(profile_str, style="dim"),
+            )
+        c.print(roles_table)
+        c.print()
 
     def _render_body(self, report: SwarmReport, verbosity: str) -> None:
         c = self.console
@@ -185,6 +248,10 @@ class ConsoleReporter:
             )
             c.print(Panel(gm_text, title="[bold]Graph Metrics[/bold]", border_style="cyan"))
             c.print()
+
+        # Agent roles — taxonomy classification
+        if report.agent_roles:
+            self._render_agent_roles(report, verbose=verbose)
 
         # Agent health scores — verbose shows all, normal hides healthy
         if report.agent_scores:
