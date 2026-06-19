@@ -91,7 +91,14 @@ _SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
 
 _VALIDATOR_HINTS = ("validator", "validate", "compliance", "checker", "review", "auditor", "guard")
 _MONITOR_HINTS = ("monitor", "health", "watch", "observe", "telemetry", "metric", "logger")
-_ORCHESTRATOR_HINTS = ("orchestrator", "coordinator", "manager", "supervisor", "dispatcher", "planner")
+_ORCHESTRATOR_HINTS = (
+    "orchestrator",
+    "coordinator",
+    "manager",
+    "supervisor",
+    "dispatcher",
+    "planner",
+)
 _AGGREGATOR_HINTS = ("aggregator", "collector", "sink", "consolidator", "reducer")
 _GATEWAY_HINTS = ("gateway", "entrypoint", "ingress", "egress", "boundary", "frontend", "api")
 _WORKER_HINTS = ("worker", "task", "executor", "runner", "processor")
