@@ -195,8 +195,36 @@ class SwarmReport(BaseModel):
 
     @property
     def swarm_score(self) -> int:
-        """0-100 swarm reliability score (100 = best). Inverse of risk_score."""
-        return int(round(max(0.0, 100.0 - self.risk_score)))
+        """0-100 swarm reliability score (100 = best).
+
+        Computed from sub-scores rather than a hard inverse of ``risk_score``
+        so that a less-risky or more-redundant topology produces a higher
+        score even when raw finding counts are similar. Penalty weights are
+        deliberately lighter than ``risk_score`` so the score does not
+        saturate at 0 after a handful of CRITICAL findings — that loses the
+        ability to track topology improvements run-over-run.
+        """
+        penalty_weights = {
+            Severity.CRITICAL: 15.0,
+            Severity.HIGH: 8.0,
+            Severity.MEDIUM: 3.0,
+            Severity.LOW: 1.0,
+            Severity.INFO: 0.5,
+        }
+        findings_penalty = sum(penalty_weights.get(f.severity, 0.0) for f in self.all_findings)
+
+        # Topology penalty: low average redundancy → up to -25 pts. A 2-hub
+        # redundant topology (high redundancy) keeps this term near 0, while
+        # a hub-spoke with 5 workers (low redundancy / SPOFs) loses points.
+        topology_penalty = 0.0
+        if self.redundancy_scores:
+            avg_redundancy = sum(float(r) for r in self.redundancy_scores.values()) / len(
+                self.redundancy_scores
+            )
+            topology_penalty = max(0.0, 100.0 - avg_redundancy) * 0.25
+
+        score = 100.0 - findings_penalty - topology_penalty
+        return int(round(max(0.0, min(100.0, score))))
 
     @property
     def certification_level(self) -> str:

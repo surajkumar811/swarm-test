@@ -36,10 +36,30 @@ def _safe_name(name: str) -> str:
     return safe or "unnamed-swarm"
 
 
-def _finding_id(swarm_name: str, finding: Any) -> str:
-    """Compute the same stable hash used by SwarmReport.to_json for findings."""
-    affected = sorted(getattr(finding, "affected_agents", []) or [])
-    raw = f"{swarm_name}:{finding.test_name}:{finding.title}:{affected}"
+def _build_agent_name_lookup(report: SwarmReport) -> dict[str, str]:
+    """Resolve agent_id (UUID) → agent_name from the report's score map."""
+    lookup: dict[str, str] = {}
+    for aid, score in (report.agent_scores or {}).items():
+        name = getattr(score, "agent_name", None)
+        if name:
+            lookup[aid] = name
+    return lookup
+
+
+def _stable_finding_key(
+    swarm_name: str,
+    finding: Any,
+    name_lookup: dict[str, str],
+) -> str:
+    """Hash identity for a finding that survives UUID regeneration.
+
+    Identity uses (test_name + sorted agent NAMES + title) so the same logical
+    finding produced by two consecutive runs of the same topology collides,
+    even though the underlying agent UUIDs differ.
+    """
+    raw_agents = getattr(finding, "affected_agents", None) or []
+    agent_names = sorted(name_lookup.get(aid, aid) for aid in raw_agents)
+    raw = f"{swarm_name}:{finding.test_name}:{finding.title}:{agent_names}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -47,16 +67,19 @@ def _snapshot_from_report(report: SwarmReport) -> dict[str, Any]:
     """Build the compact dict written to disk for a single run."""
     severity_summary: dict[str, int] = {s.value: 0 for s in Severity}
     finding_records: list[dict[str, Any]] = []
+    name_lookup = _build_agent_name_lookup(report)
     for finding in report.all_findings:
         sev = finding.severity.value
         severity_summary[sev] += 1
         finding_records.append(
             {
-                "finding_id": _finding_id(report.swarm_name, finding),
+                "finding_id": _stable_finding_key(report.swarm_name, finding, name_lookup),
                 "test_name": finding.test_name,
                 "severity": sev,
                 "title": finding.title,
-                "affected_agents": list(finding.affected_agents),
+                # Persist resolved names, not UUIDs, so a snapshot is portable
+                # across runs and human-readable in the history JSON.
+                "affected_agents": [name_lookup.get(aid, aid) for aid in finding.affected_agents],
             }
         )
 

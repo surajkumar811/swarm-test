@@ -235,16 +235,18 @@ class ConsoleReporter:
         c.print(Rule("[bold blue]SWARM-TEST RELIABILITY REPORT[/bold blue]"))
         c.print()
 
-        # Header panel
-        risk_color = (
-            "red" if report.risk_score >= 60 else "yellow" if report.risk_score >= 30 else "green"
+        # Header panel — single consistent metric: Swarm Score (higher = healthier).
+        swarm_score_val = report.swarm_score
+        score_color = (
+            "green" if swarm_score_val >= 75 else "yellow" if swarm_score_val >= 50 else "red"
         )
         header_text = (
             f"[bold]Swarm:[/bold] {report.swarm_name}\n"
             f"[bold]Framework:[/bold] {report.framework}\n"
             f"[bold]Agents:[/bold] {report.agent_count}   "
             f"[bold]Edges:[/bold] {report.edge_count}\n"
-            f"[bold]Risk Score:[/bold] [{risk_color}]{report.risk_score:.0f}/100[/{risk_color}]\n"
+            f"[bold]Swarm Score:[/bold] [{score_color}]{swarm_score_val}/100"
+            f" — {report.certification_level}[/{score_color}]\n"
             f"[bold]Duration:[/bold] {report.total_duration_ms:.0f}ms"
         )
         c.print(Panel(header_text, title="[bold]Summary[/bold]", border_style="blue"))

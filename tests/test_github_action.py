@@ -143,12 +143,14 @@ def test_github_step_summary_written_to_env_file(tmp_path: Path) -> None:
 
 
 def test_swarm_score_and_certification() -> None:
-    """swarm_score inverts risk_score and certification_level maps to known bands."""
+    """swarm_score reflects finding severity and maps to known certification bands."""
     clean = _make_report([])
     assert swarm_score(clean) == 100.0
     assert certification_level(swarm_score(clean)) == "Production-ready"
 
-    risky = _make_report([Severity.CRITICAL, Severity.CRITICAL])
+    # Enough criticals to land squarely in the "Critical risk" band under the
+    # current (lighter) per-finding penalty curve used by SwarmReport.swarm_score.
+    risky = _make_report([Severity.CRITICAL] * 4 + [Severity.HIGH] * 2)
     assert swarm_score(risky) < 50.0
     assert certification_level(swarm_score(risky)) == "Critical risk"
 

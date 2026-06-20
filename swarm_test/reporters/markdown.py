@@ -41,13 +41,13 @@ class MarkdownReporter:
         lines: list[str] = []
 
         # -- Header ----------------------------------------------------
-        risk = report.risk_score
-        if risk >= 60:
-            risk_badge = f"\U0001f534 {risk:.0f}/100"
-        elif risk >= 30:
-            risk_badge = f"\U0001f7e1 {risk:.0f}/100"
+        score = report.swarm_score
+        if score >= 75:
+            score_badge = f"\U0001f7e2 {score}/100 — {report.certification_level}"
+        elif score >= 50:
+            score_badge = f"\U0001f7e1 {score}/100 — {report.certification_level}"
         else:
-            risk_badge = f"\U0001f7e2 {risk:.0f}/100"
+            score_badge = f"\U0001f534 {score}/100 — {report.certification_level}"
 
         lines.append(f"# \U0001f9ea Swarm Reliability Report — {report.swarm_name}")
         lines.append("")
@@ -57,7 +57,7 @@ class MarkdownReporter:
         lines.append(f"| **Framework** | {report.framework} |")
         lines.append(f"| **Agents** | {report.agent_count} |")
         lines.append(f"| **Edges** | {report.edge_count} |")
-        lines.append(f"| **Risk Score** | {risk_badge} |")
+        lines.append(f"| **Swarm Score** | {score_badge} |")
         lines.append(f"| **Duration** | {report.total_duration_ms:.0f}ms |")
         lines.append("")
 

@@ -19,8 +19,8 @@ _SEVERITY_TO_COMMAND: dict[Severity, str] = {
 
 
 def swarm_score(report: SwarmReport) -> float:
-    """Invert risk_score so higher = healthier (0-100)."""
-    return round(max(0.0, min(100.0, 100.0 - report.risk_score)), 1)
+    """Return the report's 0-100 swarm reliability score (higher = healthier)."""
+    return round(float(report.swarm_score), 1)
 
 
 def certification_level(score: float) -> str:
