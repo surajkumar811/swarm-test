@@ -1298,9 +1298,7 @@ class HtmlReporter:
                     arrow, chart_color = "↑", "#22c55e"
                 elif trend_name == "declining":
                     arrow, chart_color = "↓", "#ef4444"
-                recent_scores: list[int] = [
-                    int(s) for s in (comparison.get("recent_scores") or [])
-                ]
+                recent_scores: list[int] = [int(s) for s in (comparison.get("recent_scores") or [])]
                 chart_points = ""
                 chart_dots: list[dict[str, Any]] = []
                 if len(recent_scores) >= 2:
@@ -1308,8 +1306,8 @@ class HtmlReporter:
                     pad_x, pad_y = 16.0, 8.0
                     plot_w = width - 2 * pad_x
                     plot_h = height - 2 * pad_y
-                    n = len(recent_scores)
-                    step = plot_w / max(1, n - 1)
+                    num_points = len(recent_scores)
+                    step = plot_w / max(1, num_points - 1)
                     pts: list[str] = []
                     for i, score in enumerate(recent_scores):
                         x = pad_x + step * i

@@ -137,8 +137,7 @@ class ConsoleReporter:
         c = self.console
         if comparison.get("first_run"):
             c.print(
-                "[dim]First run — no history to compare yet. "
-                "Future runs will show trends.[/dim]"
+                "[dim]First run — no history to compare yet. " "Future runs will show trends.[/dim]"
             )
             return
 
