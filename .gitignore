@@ -23,6 +23,9 @@ htmlcov/
 /*.html
 /*.json
 
+# Historical run snapshots (per-repo trend tracking — see README)
+.swarmtest-history/
+
 # Environment variables
 .env
 .env.*

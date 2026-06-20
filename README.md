@@ -150,6 +150,61 @@ single CI run alongside the JSON / HTML reports.
 
 ---
 
+## Historical Tracking
+
+swarm-test **remembers every run** and shows whether your system is improving
+or declining. After the first run, every subsequent invocation prints a trend
+line below the headline verdict so you can see drift at a glance — in your
+terminal, in CI logs, and in the HTML report.
+
+```
+Swarm Score: 72/100 — NEEDS IMPROVEMENT (3 critical findings)
+Trend: ↑ +18 from last run (was 54) — improving
+Recent: 54 → 61 → 58 → 72
+✓ 3 findings resolved since last run
+⚠ 1 new finding since last run
+```
+
+Run snapshots are stored in `.swarmtest-history/` next to where you invoke
+swarm-test. Each snapshot is small (a JSON file with the score, severity
+summary, agent counts, and finding IDs), so a year of daily runs costs only
+a few megabytes.
+
+### Browse the trend
+
+```bash
+swarm-test history show          # table of recent runs with Δ score
+swarm-test history show -n 20    # last 20 entries
+swarm-test history clear         # delete all history (prompts to confirm)
+```
+
+### Disable for a single run
+
+```bash
+swarm-test run my_crew.py --no-history     # don't write this run to disk
+swarm-test probe my_crew.py --no-history
+swarm-test scan -a "A,B" -e "A>B" --no-history
+```
+
+### Configure persistence
+
+In `.swarmtest.yml`:
+
+```yaml
+history_enabled: true              # default — set to false to disable globally
+history_dir: .swarmtest-history    # default location
+history_keep: 50                   # max snapshots retained per swarm
+```
+
+### Should I commit `.swarmtest-history/`?
+
+`.swarmtest-history/` is gitignored by default so local experiments don't
+pollute your repo. If you want to track reliability over time in CI (so the
+trend survives across machines), simply remove that line from `.gitignore`
+and commit the directory — every snapshot is a tiny JSON file safe for diffs.
+
+---
+
 ## Features
 
 | Test | What it checks |

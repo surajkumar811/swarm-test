@@ -473,6 +473,52 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
     color: var(--muted);
     font-size: 0.9rem;
   }
+
+  /* TREND ----------------------------------------------------------------- */
+  .trend-wrap {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) minmax(280px, 1.4fr);
+    gap: 1.25rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 1.25rem 1.5rem;
+  }
+  .trend-summary { display: flex; flex-direction: column; gap: 0.65rem; }
+  .trend-delta {
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .trend-delta-improving { color: var(--pass); }
+  .trend-delta-declining { color: var(--critical); }
+  .trend-delta-stable    { color: var(--muted); }
+  .trend-delta .trend-label {
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+  .trend-meta { color: var(--muted); font-size: 0.85rem; }
+  .trend-meta b { color: var(--text); }
+  .trend-badges { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .trend-chart {
+    background: var(--card-2);
+    border-radius: 0.5rem;
+    padding: 0.65rem 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .trend-chart svg { width: 100%; height: 90px; }
+  .trend-chart-caption {
+    color: var(--muted);
+    font-size: 0.78rem;
+    text-align: center;
+  }
+  @media (max-width: 720px) {
+    .trend-wrap { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
@@ -510,6 +556,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 
 <nav class="report-nav">
   <a href="#overview">Overview</a>
+  {% if trend %}<a href="#trend">Trend</a>{% endif %}
   <a href="#agent-graph">Agent Graph</a>
   <a href="#heatmap">Heatmap</a>
   <a href="#health">Health Scores</a>
@@ -518,6 +565,45 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 </nav>
 
 <main>
+
+{% if trend %}
+<section id="trend">
+  <h2 class="section-title">Trend</h2>
+  {% if trend.first_run %}
+  <div class="empty-state">First run — no history to compare yet. Future runs will appear as a trend chart here.</div>
+  {% else %}
+  <div class="trend-wrap">
+    <div class="trend-summary">
+      <div class="trend-delta trend-delta-{{ trend.trend }}">
+        {{ trend.arrow }} {{ trend.delta_sign }}{{ trend.delta }} <span class="trend-label">from last run</span>
+      </div>
+      <div class="trend-meta">
+        Previous score: <b>{{ trend.previous_score }}</b> · Current: <b>{{ trend.current_score }}</b> · Status: <b>{{ trend.trend | upper }}</b>
+      </div>
+      <div class="trend-badges">
+        {% if trend.resolved_count %}<span class="badge badge-passed">✓ {{ trend.resolved_count }} resolved</span>{% endif %}
+        {% if trend.new_count %}<span class="badge badge-medium">⚠ {{ trend.new_count }} new</span>{% endif %}
+        {% if trend.regressed_count %}<span class="badge badge-critical">↑ {{ trend.regressed_count }} regressed</span>{% endif %}
+        {% if not trend.resolved_count and not trend.new_count and not trend.regressed_count %}<span class="badge badge-info">No finding changes</span>{% endif %}
+      </div>
+    </div>
+    <div class="trend-chart">
+      <svg viewBox="0 0 320 90" preserveAspectRatio="none" role="img" aria-label="Recent swarm scores">
+        {% if trend.chart_points %}
+        <polyline points="{{ trend.chart_points }}" fill="none" stroke="{{ trend.chart_color }}" stroke-width="2"/>
+        {% for pt in trend.chart_dots %}
+        <circle cx="{{ pt.x }}" cy="{{ pt.y }}" r="3" fill="{{ trend.chart_color }}"><title>Score {{ pt.score }}</title></circle>
+        {% endfor %}
+        {% endif %}
+        <text x="4" y="14" fill="#94a3b8" font-size="10">100</text>
+        <text x="4" y="86" fill="#94a3b8" font-size="10">0</text>
+      </svg>
+      <div class="trend-chart-caption">Recent scores: {{ trend.recent_scores | join(' → ') }}</div>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
 
 <section id="overview">
   <h2 class="section-title">Overview · Test Results</h2>
@@ -1197,6 +1283,57 @@ class HtmlReporter:
             ],
         }
 
+        # ---- Trend (historical comparison) --------------------------
+        trend_ctx: dict[str, Any] | None = None
+        comparison = getattr(report, "comparison", None)
+        if comparison:
+            if comparison.get("first_run"):
+                trend_ctx = {"first_run": True}
+            else:
+                delta = int(comparison.get("swarm_score_delta", 0))
+                trend_name = str(comparison.get("trend", "stable"))
+                arrow = "→"
+                chart_color = "#94a3b8"
+                if trend_name == "improving":
+                    arrow, chart_color = "↑", "#22c55e"
+                elif trend_name == "declining":
+                    arrow, chart_color = "↓", "#ef4444"
+                recent_scores: list[int] = [
+                    int(s) for s in (comparison.get("recent_scores") or [])
+                ]
+                chart_points = ""
+                chart_dots: list[dict[str, Any]] = []
+                if len(recent_scores) >= 2:
+                    width, height = 320.0, 90.0
+                    pad_x, pad_y = 16.0, 8.0
+                    plot_w = width - 2 * pad_x
+                    plot_h = height - 2 * pad_y
+                    n = len(recent_scores)
+                    step = plot_w / max(1, n - 1)
+                    pts: list[str] = []
+                    for i, score in enumerate(recent_scores):
+                        x = pad_x + step * i
+                        y = pad_y + (1.0 - max(0, min(100, score)) / 100.0) * plot_h
+                        pts.append(f"{x:.1f},{y:.1f}")
+                        chart_dots.append({"x": round(x, 1), "y": round(y, 1), "score": score})
+                    chart_points = " ".join(pts)
+                trend_ctx = {
+                    "first_run": False,
+                    "trend": trend_name,
+                    "arrow": arrow,
+                    "delta": abs(delta),
+                    "delta_sign": "+" if delta > 0 else ("-" if delta < 0 else ""),
+                    "previous_score": int(comparison.get("previous_score", 0)),
+                    "current_score": int(comparison.get("current_score", report.swarm_score)),
+                    "recent_scores": recent_scores,
+                    "chart_points": chart_points,
+                    "chart_dots": chart_dots,
+                    "chart_color": chart_color,
+                    "new_count": len(comparison.get("new_findings") or []),
+                    "resolved_count": len(comparison.get("resolved_findings") or []),
+                    "regressed_count": len(comparison.get("regressed") or []),
+                }
+
         # ---- Render -------------------------------------------------
         level = report.certification_level
         level_color = _LEVEL_COLOR.get(level, "#94a3b8")
@@ -1227,6 +1364,7 @@ class HtmlReporter:
             severity_colors=_SEVERITY_COLORS_HEX,
             js_payload=json.dumps(js_payload, default=str),
             version=version_str,
+            trend=trend_ctx,
             generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         )
 

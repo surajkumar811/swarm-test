@@ -156,6 +156,10 @@ class SwarmReport(BaseModel):
     agent_roles: dict[str, dict[str, Any]] = Field(default_factory=dict)
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime | None = None
+    comparison: dict[str, Any] | None = Field(
+        default=None,
+        description="Trend comparison vs the most recent prior run, if history is enabled.",
+    )
 
     @property
     def all_findings(self) -> list[Finding]:
@@ -413,6 +417,20 @@ class SwarmReport(BaseModel):
             else 0.0
         )
 
+        comparison_block: dict[str, Any] | None = None
+        if self.comparison:
+            comparison_block = {
+                "first_run": bool(self.comparison.get("first_run", False)),
+                "trend": self.comparison.get("trend"),
+                "swarm_score_delta": self.comparison.get("swarm_score_delta"),
+                "previous_score": self.comparison.get("previous_score"),
+                "current_score": self.comparison.get("current_score", self.swarm_score),
+                "new_findings_count": len(self.comparison.get("new_findings") or []),
+                "resolved_findings_count": len(self.comparison.get("resolved_findings") or []),
+                "regressed_count": len(self.comparison.get("regressed") or []),
+                "recent_scores": self.comparison.get("recent_scores") or [],
+            }
+
         result = {
             "version": "0.2.2",
             "swarm_name": self.swarm_name,
@@ -443,6 +461,7 @@ class SwarmReport(BaseModel):
                 for r in self.test_results
             ],
             "findings": enriched_findings,
+            "comparison": comparison_block,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 

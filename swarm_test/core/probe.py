@@ -44,6 +44,7 @@ class SwarmProbe:
         contracts: Any | None = None,
         plugin_registry: PluginRegistry | None = None,
         discover_plugins_on_init: bool = True,
+        enable_history: bool | None = None,
     ) -> None:
         self.swarm = swarm
         self.swarm_name = swarm_name
@@ -83,6 +84,21 @@ class SwarmProbe:
                     logger.warning("Adapter ingest failed: %s", exc)
 
         self._attacks: list[Any] = self._load_attacks(config, self.contracts)
+
+        # Historical tracking. ``enable_history`` (constructor arg) wins over
+        # config; with no override and no config, history is off so library
+        # callers don't unexpectedly write to disk.
+        self._history_dir: str = ".swarmtest-history"
+        self._history_keep: int = 50
+        if config is not None:
+            self._history_dir = str(getattr(config, "history_dir", self._history_dir))
+            self._history_keep = int(getattr(config, "history_keep", self._history_keep))
+        if enable_history is not None:
+            self._history_enabled = bool(enable_history)
+        elif config is not None:
+            self._history_enabled = bool(getattr(config, "history_enabled", False))
+        else:
+            self._history_enabled = False
 
     # ------------------------------------------------------------------
     # Framework detection
@@ -300,6 +316,19 @@ class SwarmProbe:
             started_at=started,
             completed_at=datetime.now(timezone.utc),
         )
+
+        if self._history_enabled:
+            try:
+                from swarm_test.history import HistoryStore
+
+                store = HistoryStore(self._history_dir)
+                comparison = store.compare_to_previous(report)
+                report.comparison = comparison
+                store.save(report)
+                store.prune(keep=self._history_keep)
+            except Exception as exc:
+                logger.warning("Historical tracking failed: %s", exc)
+
         return report
 
     def _run_plugins(self) -> list[TestResult]:

@@ -105,6 +105,12 @@ def cli() -> None:
     default=False,
     help="Open the generated HTML report in the default browser.",
 )
+@click.option(
+    "--no-history",
+    is_flag=True,
+    default=False,
+    help="Skip writing this run to .swarmtest-history and skip trend display.",
+)
 def probe(
     script: str,
     output: str | None,
@@ -117,6 +123,7 @@ def probe(
     quiet: bool,
     verbose: bool,
     open_report: bool,
+    no_history: bool,
 ) -> None:
     """Load a Python SCRIPT, extract the swarm object, and run all reliability tests."""
     import importlib.util
@@ -159,6 +166,7 @@ def probe(
     probe_obj = SwarmProbe(
         swarm,
         swarm_name=name or Path(script).stem,
+        enable_history=not no_history,
     )
     _announce_plugins(probe_obj, verbosity)
     report = probe_obj.run_all()
@@ -248,6 +256,12 @@ def probe(
     default=False,
     help="Open the generated HTML report in the default browser.",
 )
+@click.option(
+    "--no-history",
+    is_flag=True,
+    default=False,
+    help="Skip writing this run to .swarmtest-history and skip trend display.",
+)
 def scan(
     agents: str,
     edges: str,
@@ -260,6 +274,7 @@ def scan(
     quiet: bool,
     verbose: bool,
     open_report: bool,
+    no_history: bool,
 ) -> None:
     """Quick scan: test any agent topology in seconds, no Python needed.
 
@@ -340,6 +355,7 @@ def scan(
         swarm_name=name,
         agents=list(agent_nodes.values()),
         events=event_list,
+        enable_history=not no_history,
     )
     _announce_plugins(probe_obj, verbosity)
     report = probe_obj.run_all()
@@ -492,6 +508,12 @@ def scan(
     default=False,
     help="Open the generated HTML report in the default browser (with --output-format html).",
 )
+@click.option(
+    "--no-history",
+    is_flag=True,
+    default=False,
+    help="Disable historical tracking for this run (overrides config).",
+)
 def run_cmd(
     script: str | None,
     config_path: str | None,
@@ -510,6 +532,7 @@ def run_cmd(
     quiet: bool,
     verbose: bool,
     open_report: bool,
+    no_history: bool,
 ) -> None:
     """Run swarm-test with a YAML config file (auto-discovered) plus optional CLI overrides.
 
@@ -546,6 +569,7 @@ def run_cmd(
         "strict": strict,
         "contracts_path": contracts_path,
         "output_verbosity": cli_verbosity,
+        "history_enabled": False if no_history else None,
     }
     try:
         config = merge_cli_args(config, cli_overrides)
@@ -794,6 +818,121 @@ def plugins_info(name: str) -> None:
         f"[bold]Class:[/bold] {type(plugin).__module__}.{type(plugin).__name__}"
     )
     console.print(Panel(body, title=f"[bold]{plugin.name}[/bold]", border_style="cyan"))
+
+
+@cli.group("history")
+def history_group() -> None:
+    """Inspect or clear the local swarm-test history (.swarmtest-history)."""
+
+
+@history_group.command("show")
+@click.option(
+    "--history-dir",
+    default=".swarmtest-history",
+    show_default=True,
+    help="History directory to read from.",
+)
+@click.option(
+    "--swarm",
+    default=None,
+    help="Filter to a specific swarm name.",
+)
+@click.option(
+    "--limit",
+    "-n",
+    type=int,
+    default=10,
+    show_default=True,
+    help="Maximum number of entries to display.",
+)
+def history_show(history_dir: str, swarm: str | None, limit: int) -> None:
+    """Display the trend table of recent runs."""
+    from rich.table import Table
+
+    from swarm_test.history import HistoryStore
+
+    store = HistoryStore(history_dir)
+    entries = store.load_recent(n=limit, swarm_name=swarm)
+    if not entries:
+        console.print(
+            "[yellow]No swarm-test history found in "
+            f"{history_dir}[/yellow]\n"
+            "[dim]Run swarm-test on a script first to start tracking trends.[/dim]"
+        )
+        return
+
+    # Build a oldest → newest series so deltas read forward in time.
+    ordered = list(reversed(entries))
+    table = Table(title=f"swarm-test history ({len(ordered)} entries)", show_lines=False)
+    table.add_column("Timestamp", style="cyan")
+    table.add_column("Swarm", style="bold")
+    table.add_column("Score", justify="center")
+    table.add_column("Findings", justify="center")
+    table.add_column("Δ Score", justify="center")
+
+    prior_score: int | None = None
+    for entry in ordered:
+        score = int(entry.get("swarm_score", 0))
+        findings = int(entry.get("total_findings", 0))
+        if prior_score is None:
+            delta_str = "—"
+            delta_style = "dim"
+        else:
+            diff = score - prior_score
+            sign = "+" if diff > 0 else ""
+            delta_str = f"{sign}{diff}"
+            if diff > 0:
+                delta_style = "green"
+            elif diff < 0:
+                delta_style = "red"
+            else:
+                delta_style = "dim"
+        from rich.text import Text
+
+        table.add_row(
+            entry.get("timestamp", "—"),
+            entry.get("swarm_name", "—"),
+            str(score),
+            str(findings),
+            Text(delta_str, style=delta_style),
+        )
+        prior_score = score
+
+    console.print(table)
+
+
+@history_group.command("clear")
+@click.option(
+    "--history-dir",
+    default=".swarmtest-history",
+    show_default=True,
+    help="History directory to clear.",
+)
+@click.option(
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Skip confirmation prompt.",
+)
+def history_clear(history_dir: str, yes: bool) -> None:
+    """Delete every history snapshot."""
+    from swarm_test.history import HistoryStore
+
+    if not yes:
+        confirm = click.confirm(
+            f"Delete all swarm-test history under {history_dir}?",
+            default=False,
+        )
+        if not confirm:
+            console.print("[dim]Aborted — no history was removed.[/dim]")
+            return
+
+    store = HistoryStore(history_dir)
+    removed = store.clear()
+    if removed == 0:
+        console.print("[dim]No history files to remove.[/dim]")
+    else:
+        console.print(f"[green]Removed {removed} history snapshot(s).[/green]")
 
 
 @cli.command("compare")

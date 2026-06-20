@@ -122,7 +122,56 @@ class ConsoleReporter:
         if verbosity == "quiet":
             return
 
+        self._render_trend(report)
         self._render_body(report, verbosity)
+
+    # ------------------------------------------------------------------
+    # Trend (historical tracking)
+    # ------------------------------------------------------------------
+
+    def _render_trend(self, report: SwarmReport) -> None:
+        """Render the trend line + new/resolved badges below the headline."""
+        comparison = getattr(report, "comparison", None) or {}
+        if not comparison:
+            return
+        c = self.console
+        if comparison.get("first_run"):
+            c.print(
+                "[dim]First run — no history to compare yet. "
+                "Future runs will show trends.[/dim]"
+            )
+            return
+
+        delta = int(comparison.get("swarm_score_delta", 0))
+        trend = str(comparison.get("trend", "stable"))
+        previous = int(comparison.get("previous_score", 0))
+        arrow, style = "→", "dim"
+        if trend == "improving":
+            arrow, style = "↑", "green"
+        elif trend == "declining":
+            arrow, style = "↓", "red"
+        sign = "+" if delta > 0 else ""
+        c.print(
+            f"[{style}]Trend: {arrow} {sign}{delta} from last run "
+            f"(was {previous}) — {trend}[/{style}]"
+        )
+
+        recent_scores = comparison.get("recent_scores") or []
+        if len(recent_scores) >= 2:
+            c.print("[dim]Recent: " + " → ".join(str(s) for s in recent_scores) + "[/dim]")
+
+        new_count = len(comparison.get("new_findings") or [])
+        resolved_count = len(comparison.get("resolved_findings") or [])
+        regressed_count = len(comparison.get("regressed") or [])
+        if resolved_count:
+            plural = "s" if resolved_count != 1 else ""
+            c.print(f"[green]✓ {resolved_count} finding{plural} resolved since last run[/green]")
+        if new_count:
+            plural = "s" if new_count != 1 else ""
+            c.print(f"[yellow]⚠ {new_count} new finding{plural} since last run[/yellow]")
+        if regressed_count:
+            plural = "s" if regressed_count != 1 else ""
+            c.print(f"[red]↑ {regressed_count} finding{plural} regressed in severity[/red]")
 
     # ------------------------------------------------------------------
     # Body rendering

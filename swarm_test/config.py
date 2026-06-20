@@ -108,6 +108,18 @@ class SwarmConfig(BaseModel):
         default="normal",
         description="Console verbosity: quiet, normal, or verbose.",
     )
+    history_enabled: bool = Field(
+        default=True,
+        description="Persist each run to history and compute trends.",
+    )
+    history_dir: str = Field(
+        default=".swarmtest-history",
+        description="Directory used to store historical run snapshots.",
+    )
+    history_keep: int = Field(
+        default=50,
+        description="Maximum number of historical entries to retain per swarm.",
+    )
 
     # ------------------------------------------------------------------
     # Validators
@@ -170,6 +182,13 @@ class SwarmConfig(BaseModel):
         if v <= 0:
             raise ValueError(f"timeout_seconds must be > 0 — got {v}")
         return float(v)
+
+    @field_validator("history_keep")
+    @classmethod
+    def _check_history_keep(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError(f"history_keep must be >= 0 — got {v}")
+        return int(v)
 
     # ------------------------------------------------------------------
     # Helpers
