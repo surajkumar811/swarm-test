@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+# Strip numeric values from finding titles before hashing so small topology
+# changes (e.g. a cascade count going from 12 → 13 agents) don't churn the
+# finding_id. Mirrors swarm_test.history._normalize_title.
+_TITLE_NUMERIC_RE = re.compile(r"\d+(?:\.\d+)?%?")
 
 
 class Severity(str, Enum):
@@ -321,13 +327,6 @@ class SwarmReport(BaseModel):
 
         enriched_findings: list[dict[str, Any]] = []
         for finding in self.all_findings:
-            # Stable hash from swarm_name + test_name + title + affected_agents
-            hash_input = (
-                f"{self.swarm_name}:{finding.test_name}:"
-                f"{finding.title}:{sorted(finding.affected_agents)}"
-            )
-            finding_id = hashlib.sha256(hash_input.encode()).hexdigest()[:16]
-
             # Resolve primary agent (first in affected_agents)
             agent_id = finding.affected_agents[0] if finding.affected_agents else ""
             agent_info = agent_lookup.get(agent_id, {"name": agent_id, "role": "unknown"})
@@ -343,6 +342,23 @@ class SwarmReport(BaseModel):
             edge_key = ""
             if agent_info["role"] and target_info["role"] and target_id:
                 edge_key = f"{agent_info['role']} → {target_info['role']}"
+
+            # Stable hash from swarm_name + test_name + normalised title +
+            # primary agent NAME. Agent UUIDs regenerate every run; names
+            # ("Hub", "W1") are stable. Numeric values in the title are
+            # stripped so small count drift ("12 agents" → "13 agents")
+            # doesn't churn the ID, and only the primary agent enters the
+            # hash so the non-deterministic order of an SPOF's downstream
+            # list doesn't shift its identity. The normalised title already
+            # carries the target name for edge findings. Never fold UUID,
+            # blast-radius %, or timestamp into this hash.
+            primary_name = agent_info["name"] if agent_id else ""
+            title_template = _TITLE_NUMERIC_RE.sub("N", finding.title or "")
+            hash_input = (
+                f"{self.swarm_name}:{finding.test_name}:"
+                f"{title_template}:{primary_name}"
+            )
+            finding_id = hashlib.sha256(hash_input.encode()).hexdigest()[:16]
 
             # Tool name from evidence if present
             tool_name = finding.evidence.get("tool_name", "")

@@ -84,7 +84,7 @@ class CascadeFailureAttack(BaseAttack):
                             severity=severity,
                             title=f"{label}: {agent_name} failure cascades to {len(downstream)} agents",
                             description=(
-                                f"Agent '{agent_name}' (id={agent_id}) has a blast radius of "
+                                f"Agent '{agent_name}' has a blast radius of "
                                 f"{impact_pct:.1f}% — failure would directly or indirectly "
                                 f"impact {len(downstream)} of {blast['total_agents']} agents."
                             ),

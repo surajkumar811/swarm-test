@@ -1,0 +1,49 @@
+%% Agent Interaction Graph — swarm-test
+%% Swarm Score: 0/100
+graph TD
+    OrchestratorAgent[OrchestratorAgent]:::healthy
+    ImageValidatorAgent[ImageValidatorAgent]:::healthy
+    FaceDetectorAgent[FaceDetectorAgent]:::healthy
+    BackgroundRemoverAgent[BackgroundRemoverAgent]:::healthy
+    TrainerAgent[TrainerAgent]:::healthy
+    FaceEnhancerAgent[FaceEnhancerAgent]:::healthy
+    ComplianceAgent[ComplianceAgent]:::healthy
+    FileOptimizerAgent[FileOptimizerAgent]:::healthy
+    LayoutGeneratorAgent[LayoutGeneratorAgent]:::healthy
+    PrintOptimizerAgent[PrintOptimizerAgent]:::healthy
+    SignatureProcessorAgent[SignatureProcessorAgent]:::healthy
+    DocumentProcessorAgent[DocumentProcessorAgent]:::healthy
+    EvolutionAgent[EvolutionAgent]:::healthy
+    HealthMonitorAgent[HealthMonitorAgent]:::healthy
+    OrchestratorAgent --> TrainerAgent
+    OrchestratorAgent --> FileOptimizerAgent
+    ImageValidatorAgent --> TrainerAgent
+    ImageValidatorAgent --> OrchestratorAgent
+    FaceDetectorAgent --> TrainerAgent
+    FaceDetectorAgent --> OrchestratorAgent
+    BackgroundRemoverAgent --> TrainerAgent
+    BackgroundRemoverAgent --> OrchestratorAgent
+    TrainerAgent --> OrchestratorAgent
+    TrainerAgent --> PrintOptimizerAgent
+    FaceEnhancerAgent --> TrainerAgent
+    FaceEnhancerAgent --> OrchestratorAgent
+    ComplianceAgent --> TrainerAgent
+    ComplianceAgent --> OrchestratorAgent
+    FileOptimizerAgent --> TrainerAgent
+    FileOptimizerAgent --> OrchestratorAgent
+    LayoutGeneratorAgent --> TrainerAgent
+    LayoutGeneratorAgent --> OrchestratorAgent
+    PrintOptimizerAgent --> TrainerAgent
+    PrintOptimizerAgent --> OrchestratorAgent
+    SignatureProcessorAgent --> TrainerAgent
+    SignatureProcessorAgent --> OrchestratorAgent
+    DocumentProcessorAgent --> TrainerAgent
+    DocumentProcessorAgent --> OrchestratorAgent
+    DocumentProcessorAgent --> FileOptimizerAgent
+    EvolutionAgent --> TrainerAgent
+    EvolutionAgent --> OrchestratorAgent
+    HealthMonitorAgent --> TrainerAgent
+    HealthMonitorAgent --> OrchestratorAgent
+    classDef spof fill:#ff4444,stroke:#cc0000,color:#fff
+    classDef healthy fill:#44cc44,stroke:#22aa22,color:#fff
+    classDef moderate fill:#ffaa00,stroke:#cc8800,color:#fff

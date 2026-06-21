@@ -28,6 +28,15 @@ _HISTORY_FILE_RE = re.compile(
     r"^(?P<ts>\d{8}-\d{6})_(?P<name>.+)\.json$",
 )
 _STABLE_TREND_BAND = 2  # |delta| <= this is "stable"
+# Strip out embedded numeric values (counts, percentages, durations) from finding
+# titles before hashing for identity. Counts that drift with small topology
+# changes (e.g. "cascades to 12 agents" → "cascades to 13 agents") would
+# otherwise treat the same finding as new/resolved.
+_TITLE_NUMERIC_RE = re.compile(r"\d+(?:\.\d+)?%?")
+
+
+def _normalize_title(title: str) -> str:
+    return _TITLE_NUMERIC_RE.sub("N", title or "")
 
 
 def _safe_name(name: str) -> str:
@@ -53,13 +62,19 @@ def _stable_finding_key(
 ) -> str:
     """Hash identity for a finding that survives UUID regeneration.
 
-    Identity uses (test_name + sorted agent NAMES + title) so the same logical
-    finding produced by two consecutive runs of the same topology collides,
-    even though the underlying agent UUIDs differ.
+    Identity uses (test_name + primary agent NAME + edge-pair NAME if any +
+    normalised title template). Only the first two affected agents enter the
+    hash — for cascade/SPOF findings the downstream set grows as the swarm
+    grows, but the SPOF itself is the stable identifier.
     """
     raw_agents = getattr(finding, "affected_agents", None) or []
-    agent_names = sorted(name_lookup.get(aid, aid) for aid in raw_agents)
-    raw = f"{swarm_name}:{finding.test_name}:{finding.title}:{agent_names}"
+    # Use only the primary (first) affected agent — for SPOF/cascade findings
+    # the downstream list isn't deterministically ordered, but the primary
+    # subject (the SPOF, the validator, the slow source) is. The normalised
+    # title already carries the edge target name for edge findings.
+    primary_name = name_lookup.get(raw_agents[0], raw_agents[0]) if raw_agents else ""
+    title_template = _normalize_title(finding.title)
+    raw = f"{swarm_name}:{finding.test_name}:{title_template}:{primary_name}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
