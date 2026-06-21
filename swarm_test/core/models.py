@@ -355,8 +355,7 @@ class SwarmReport(BaseModel):
             primary_name = agent_info["name"] if agent_id else ""
             title_template = _TITLE_NUMERIC_RE.sub("N", finding.title or "")
             hash_input = (
-                f"{self.swarm_name}:{finding.test_name}:"
-                f"{title_template}:{primary_name}"
+                f"{self.swarm_name}:{finding.test_name}:" f"{title_template}:{primary_name}"
             )
             finding_id = hashlib.sha256(hash_input.encode()).hexdigest()[:16]
 

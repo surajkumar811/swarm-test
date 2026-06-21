@@ -142,24 +142,19 @@ class ConsoleReporter:
             return
 
         delta = int(comparison.get("swarm_score_delta", 0))
-        trend = str(comparison.get("trend", "stable"))
         previous = int(comparison.get("previous_score", 0))
         current = int(comparison.get("current_score", previous + delta))
         if delta == 0:
-            c.print(
-                f"[dim]Trend: → no change ({current}/100, same as last run)[/dim]"
-            )
+            c.print(f"[dim]Trend: → no change ({current}/100, same as last run)[/dim]")
         elif delta > 0:
             arrow, style = "↑", "green"
             c.print(
-                f"[{style}]Trend: {arrow} +{delta} "
-                f"({current}/100, was {previous})[/{style}]"
+                f"[{style}]Trend: {arrow} +{delta} " f"({current}/100, was {previous})[/{style}]"
             )
         else:
             arrow, style = "↓", "red"
             c.print(
-                f"[{style}]Trend: {arrow} {delta} "
-                f"({current}/100, was {previous})[/{style}]"
+                f"[{style}]Trend: {arrow} {delta} " f"({current}/100, was {previous})[/{style}]"
             )
 
         recent_scores = comparison.get("recent_scores") or []
