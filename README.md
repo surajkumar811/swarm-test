@@ -1,17 +1,61 @@
 # swarm-test
 
-**The first reliability testing framework for multi-agent AI systems.**
+**Find where your multi-agent AI system breaks — before production does.**
 
+Static reliability testing for CrewAI, LangGraph, AutoGen, and custom agent systems. No live LLM calls, no API cost.
+
+[![PyPI](https://img.shields.io/pypi/v/swarm-test)](https://pypi.org/project/swarm-test/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![swarm-test](https://img.shields.io/badge/swarm--test-passing-purple)](https://github.com/surajkumar811/swarm-test)
 
-swarm-test builds a NetworkX interaction graph of your agent swarm and runs 5 automated chaos tests to surface cascade failures, context leakage, intent drift, collusion, and blast radius risks — all from a 3-line API.
+---
 
-**CrewAI, LangGraph, AutoGen — one tool.**
+## The problem
 
-## GitHub Action
+Chain 14 agents at 95% reliability each and your system is ~49% reliable end-to-end (`0.95^14`). The failures aren't inside any single agent — they're in how they connect: silent cascade failures, hidden single points of failure, fragile dependencies. swarm-test finds them by analyzing your agent topology.
 
-Drop swarm-test into your CI as a reliability gate on every PR. If your agent
-system's reliability drops below the configured threshold, the build fails.
+## Quickstart
+
+```bash
+pip install swarm-test
+swarm-test run my_crew.py --open
+```
+
+`--open` launches an interactive D3 dashboard in your browser the moment the run finishes — Swarm Score, force-directed agent graph with single-points-of-failure pulsing red, sortable health and redundancy tables, and every finding grouped by severity.
+
+No real script handy? Build a synthetic topology straight from the CLI:
+
+```bash
+swarm-test run -a "Orchestrator,Worker1,Worker2" -e "Orchestrator>Worker1,Orchestrator>Worker2"
+```
+
+![swarm-test reliability dashboard](docs/images/dashboard.png)
+
+<!-- Drop the dashboard screenshot at docs/images/dashboard.png. -->
+
+## What it catches
+
+- One agent fails and silently takes down everything downstream — *cascade failure*
+- A single agent the whole system depends on; remove it and the swarm splits — *blast radius / SPOF*
+- Credentials, PII, or other sensitive data leaking across agent boundaries — *context leakage*
+- Agents drifting from their assigned role; prompt-injection-style goal hijacking — *intent drift*
+- A slow upstream with no timeout boundary blocking the whole pipeline — *timeout resilience*
+- Dense cliques, echo chambers, and cycles that bypass the orchestrator — *collusion detection*
+- Output schema mismatches across agent edges — *contract violation* (opt-in; provide a contracts YAML)
+
+## Features
+
+- 0–100 Swarm Score with a verdict line (EXCELLENT → CRITICAL) — one-line output for CI
+- Agent role classification (orchestrator, aggregator, validator, gateway, worker, monitor, router) with confidence scores
+- Role-adjusted severity — a validator leaking context is upgraded; an orchestrator's blast radius is downgraded
+- Historical tracking — trend across runs, diffs new vs. resolved findings
+- Interactive HTML report (`--open`) — D3 force-directed graph, NxN heatmap, filterable findings
+- GitHub Action with PR annotations and job-summary score
+- Graph export to Mermaid, DOT, or PNG (SPOFs red, redundant green)
+- Framework adapters: CrewAI, LangGraph, AutoGen, generic / static graph
+- YAML config (`.swarmtest.yml`) and entry-point plugin system
+
+## CI gate (GitHub Action)
 
 ```yaml
 # .github/workflows/swarm-test.yml
@@ -27,135 +71,80 @@ jobs:
           fail-on-severity: high
 ```
 
-Findings appear inline on the PR as `::error::` / `::warning::` / `::notice::`
-annotations, and a swarm-score summary is posted to the workflow's job summary.
-Add a badge to your repo:
+Findings appear inline on the PR as `::error::` / `::warning::` / `::notice::` annotations; the Swarm Score is posted to the workflow job summary.
 
-```markdown
-[![swarm-test](https://img.shields.io/badge/swarm--test-passing-purple)](https://github.com/surajkumar811/swarm-test)
-```
-
-See [`.github/workflows/swarm-test-example.yml`](.github/workflows/swarm-test-example.yml)
-for a fully-annotated reference workflow.
-
----
+## Using it from Python
 
 ```python
 from swarm_test import SwarmProbe
 
-probe  = SwarmProbe(crew)
+# Works with a CrewAI Crew, LangGraph CompiledGraph, or AutoGen GroupChatManager
+probe  = SwarmProbe(crew, swarm_name="my-crew")
 report = probe.run_all()
 report.print_summary()
-# First line of output:
-# Swarm Score: 72/100 — NEEDS IMPROVEMENT (3 critical, 2 high findings)
+report.to_html("report.html")
+```
+
+## Installation
+
+```bash
+pip install swarm-test
+# or with framework extras:
+pip install "swarm-test[crewai]"
+pip install "swarm-test[langgraph]"
+pip install "swarm-test[autogen]"
+pip install "swarm-test[png]"        # for PNG graph export
 ```
 
 ---
 
-## Output Modes
+<details>
+<summary><b>How it works</b></summary>
 
-Every command (`probe`, `scan`, `run`) leads with a single **headline verdict
-line** that tells you the swarm's reliability at a glance — perfect for CI logs
-and dashboards.
+swarm-test builds a NetworkX directed graph from your agent system — nodes are agents, edges are interactions extracted by each framework adapter. All tests are static graph analyses; no LLM calls are made, and results are deterministic given the same topology.
 
-```
-Swarm Score: 92/100 — EXCELLENT (no findings)
-Swarm Score: 72/100 — NEEDS IMPROVEMENT (3 critical, 2 high findings)
-Swarm Score:  8/100 — CRITICAL (5 critical, 11 high findings)
-```
+- **Cascade failure** — simulates each agent failing in turn and measures downstream impact.
+- **Blast radius** — detects articulation points (graph-theoretic SPOFs) and scores every agent on a 0–100 redundancy scale composed of path redundancy (30%), role uniqueness (25%), tool coverage (20%), betweenness centrality (15%), and degree ratio (10%).
+- **Context leakage** — scans interaction payloads against a sensitive-data regex set extensible from `.swarmtest.yml`.
+- **Intent drift** — flags agents whose observed behavior diverges from their declared role; includes prompt-injection heuristics.
+- **Collusion** — finds dense cliques, echo chambers, and cycles that bypass the declared orchestrator.
+- **Timeout resilience** — identifies long synchronous chains with no timeout boundary.
+- **Contract violation** — validates agent outputs against JSON schemas declared per edge (opt-in; pass `--contracts contracts.yml`).
+
+Roles are classified from structural metrics (in/out degree, betweenness centrality) plus naming hints, each with a 0–100% confidence score. Severity is then role-adjusted: an orchestrator with high blast radius is expected and gets downgraded; a validator leaking context is a security incident and gets upgraded.
+
+</details>
+
+<details>
+<summary><b>Output modes &amp; formats</b></summary>
 
 | Flag | Output |
 |---|---|
-| `--quiet` / `-q` | Only the headline verdict (one line). Ideal for `if` checks in CI scripts. |
-| *(default)* | Headline + test results table + CRITICAL / HIGH findings + SPOFs. |
-| `--verbose` / `-V` | Headline + every finding (including LOW / INFO), graph metrics, full health & redundancy tables. |
+| `--quiet` / `-q` | Headline verdict only (one line). Ideal for `if` checks in CI scripts. |
+| *(default)* | Headline + test results + critical/high findings + SPOFs. |
+| `--verbose` / `-V` | Every finding, graph metrics, full health and redundancy tables. |
+
+Output formats via `--output-format`: `console`, `json`, `markdown`, `html`. The same verbosity setting is configurable in `.swarmtest.yml`.
+
+</details>
+
+<details>
+<summary><b>Graph export</b></summary>
 
 ```bash
-swarm-test run my_crew.py --quiet           # CI-friendly: one line out
-swarm-test run my_crew.py                   # default summary
-swarm-test run my_crew.py --verbose         # full report
-```
-
-The same setting is available in `.swarmtest.yml`:
-
-```yaml
-output_verbosity: normal   # quiet | normal | verbose
-```
-
-## Interactive HTML Report
-
-`--output-format html` renders a self-contained dashboard with a sticky
-navigation bar, a live D3 force-directed agent graph (drag, zoom, click to
-highlight neighbours), an NxN interaction heatmap, sortable health and
-redundancy tables, and collapsible findings cards filterable by severity.
-
-```bash
-swarm-test run my_crew.py --output-format html --output-path report.html --open
-```
-
-`--open` launches the report in your default browser as soon as it's
-generated. Single-points-of-failure pulse red on the graph; cells in the
-heatmap that have findings are tinted red so you can jump straight to the
-offending edge.
-
----
-
-## Graph Export
-
-Export your agent topology as **Mermaid**, **DOT**, or **PNG** to drop straight
-into docs, wikis, or pull-request descriptions. SPOFs are coloured red,
-moderate-redundancy agents orange, and fully redundant agents green — every
-viewer can spot the risk at a glance.
-
-```bash
-# Mermaid (great for GitHub READMEs — renders inline)
 swarm-test graph my_crew.py --format mermaid
-
-# Save to a file
-swarm-test graph my_crew.py --format mermaid --output topology.mmd
 swarm-test graph my_crew.py --format dot --output topology.dot
-
-# PNG (requires matplotlib)
-pip install "swarm-test[png]"
-swarm-test graph my_crew.py --format png --output topology.png
+swarm-test graph my_crew.py --format png --output topology.png   # needs the [png] extra
 ```
 
-Or build a graph straight from the CLI with no Python script:
+Mermaid renders inline on GitHub, so you can drop the output straight into a README or PR description. Colors: red = SPOF, orange = moderate redundancy, green = fully redundant.
 
-```bash
-swarm-test graph --agents "Hub,W1,W2,W3" \
-                 --edges "Hub<>W1,Hub<>W2,Hub<>W3" \
-                 --format mermaid
-```
+</details>
 
-Example Mermaid output (renders directly on GitHub):
+<details>
+<summary><b>Historical tracking</b></summary>
 
-```mermaid
-graph TD
-    Hub[Hub ⚠️ SPOF]:::spof
-    W1[Worker1]:::healthy
-    W2[Worker2]:::healthy
-    W3[Worker3]:::healthy
-    Hub --> W1
-    Hub --> W2
-    Hub --> W3
-    classDef spof fill:#ff4444,stroke:#cc0000,color:#fff
-    classDef healthy fill:#44cc44,stroke:#22aa22,color:#fff
-    classDef moderate fill:#ffaa00,stroke:#cc8800,color:#fff
-```
-
-The same formats are also available via `swarm-test run --output-format
-{mermaid,dot,png} --output-path …`, so you can wire graph export into a
-single CI run alongside the JSON / HTML reports.
-
----
-
-## Historical Tracking
-
-swarm-test **remembers every run** and shows whether your system is improving
-or declining. After the first run, every subsequent invocation prints a trend
-line below the headline verdict so you can see drift at a glance — in your
-terminal, in CI logs, and in the HTML report.
+Every run writes a small JSON snapshot to `.swarmtest-history/`. Subsequent runs print a trend line below the headline verdict:
 
 ```
 Swarm Score: 72/100 — NEEDS IMPROVEMENT (3 critical findings)
@@ -165,493 +154,86 @@ Recent: 54 → 61 → 58 → 72
 ⚠ 1 new finding since last run
 ```
 
-Run snapshots are stored in `.swarmtest-history/` next to where you invoke
-swarm-test. Each snapshot is small (a JSON file with the score, severity
-summary, agent counts, and finding IDs), so a year of daily runs costs only
-a few megabytes.
+Browse with `swarm-test history show`. Disable per-run with `--no-history`, or globally via `history_enabled: false` in `.swarmtest.yml`. `.swarmtest-history/` is gitignored by default; commit it if you want the trend to survive across CI machines.
 
-### Browse the trend
+</details>
 
-```bash
-swarm-test history show          # table of recent runs with Δ score
-swarm-test history show -n 20    # last 20 entries
-swarm-test history clear         # delete all history (prompts to confirm)
-```
-
-### Disable for a single run
-
-```bash
-swarm-test run my_crew.py --no-history     # don't write this run to disk
-swarm-test probe my_crew.py --no-history
-swarm-test scan -a "A,B" -e "A>B" --no-history
-```
-
-### Configure persistence
-
-In `.swarmtest.yml`:
-
-```yaml
-history_enabled: true              # default — set to false to disable globally
-history_dir: .swarmtest-history    # default location
-history_keep: 50                   # max snapshots retained per swarm
-```
-
-### Should I commit `.swarmtest-history/`?
-
-`.swarmtest-history/` is gitignored by default so local experiments don't
-pollute your repo. If you want to track reliability over time in CI (so the
-trend survives across machines), simply remove that line from `.gitignore`
-and commit the directory — every snapshot is a tiny JSON file safe for diffs.
-
----
-
-## Features
-
-| Test | What it checks |
-|---|---|
-| **Cascade Failure** | Which agents, if they fail, bring down the most of the swarm |
-| **Context Leakage** | Sensitive data (credentials, PII) crossing agent boundaries |
-| **Intent Drift** | Agents acting outside their role; prompt injection; goal hijacking |
-| **Collusion Detection** | Dense cliques, echo chambers, orchestrator-bypass cycles |
-| **Blast Radius** | Single points of failure, critical path, redundancy score |
-
-### Agent Role Taxonomy
-
-swarm-test auto-classifies every agent by its role in the interaction graph
-— combining structural metrics (in/out degree, betweenness centrality) with
-naming hints. Every classification carries a 0-100% confidence score.
-
-| Role | What it means |
-|---|---|
-| **ORCHESTRATOR** | Routes work to many agents — high out-degree, high betweenness |
-| **AGGREGATOR** | Collects from many agents — high in-degree, low out-degree |
-| **VALIDATOR** | Checks / approves outputs — security-sensitive |
-| **GATEWAY** | Entry or exit boundary — pure source or pure sink |
-| **WORKER** | Does the actual task work — leaf-ish, low out-degree |
-| **MONITOR** | Observes others — broad connections off the critical path |
-| **ROUTER** | Intermediate hop — balanced in/out degree |
-| **UNKNOWN** | Can't classify confidently |
-
-**Role-adjusted severity.** An orchestrator with high blast radius is
-*expected* — that's its job. A worker with high blast radius is a design
-smell — workers shouldn't have wide downstream impact. A validator that
-leaks context is a security incident. swarm-test knows the difference and
-adjusts severity accordingly: orchestrator/aggregator blast findings are
-downgraded one level (it's by design), while validator context-leakage
-findings are upgraded one level (security-sensitive).
-
-```
-                       Agent Roles
-╭───────────────────────────────────────────────────────────────────────╮
-│ Agent            Role            Confidence   Profile                 │
-│ Orchestrator     ORCHESTRATOR    95%          critical, needs fallback│
-│ Worker1          WORKER          88%          standard                │
-│ ValidatorAgent   VALIDATOR       92%          security-sensitive      │
-│ HealthMonitor    MONITOR         85%          standard                │
-╰───────────────────────────────────────────────────────────────────────╯
-```
-
-The classification is also exported in JSON (`agent_roles`) and on every
-node of the HTML report (role badge + tooltip).
-
----
-
-### Redundancy Scoring
-
-Every agent gets a **0-100 redundancy score** that quantifies how replaceable it is:
-
-| Score | Level | Meaning |
-|---|---|---|
-| 0-20 | **IRREPLACEABLE** | Single point of failure — removing this agent breaks the swarm |
-| 21-40 | LOW | Few or no peers can cover for this agent |
-| 41-60 | MODERATE | Some overlap with peers; monitor |
-| 61-80 | HIGH | Multiple peers can pick up the work |
-| 81-100 | FULLY REDUNDANT | Failure is invisible — graph survives with no degradation |
-
-The score is composed from five factors: **path redundancy** (30%), **role uniqueness** (25%), **tool coverage** (20%), **betweenness centrality** (15%), and **degree ratio** (10%). Agents detected as articulation points (SPOFs) are capped below 20.
-
-#### Console output
-
-```
-                       Agent Redundancy
-╭───────────────────────────────────────────────────────────────╮
-│ Agent          Score      Level             Risk              │
-│ Orchestrator   8/100      IRREPLACEABLE     SPOF              │
-│ Writer         45/100     MODERATE          Monitor           │
-│ Researcher     65/100     HIGH              Safe              │
-│ Reviewer       82/100     FULLY REDUNDANT   Safe              │
-╰───────────────────────────────────────────────────────────────╯
-```
-
-#### JSON output
-
-```json
-{
-  "overall_redundancy": 50.0,
-  "redundancy_scores": [
-    {
-      "agent_id": "abc-123",
-      "agent_name": "Orchestrator",
-      "agent_role": "orchestrator",
-      "score": 8.0,
-      "level": "IRREPLACEABLE"
-    },
-    {
-      "agent_id": "def-456",
-      "agent_name": "Researcher",
-      "agent_role": "researcher",
-      "score": 65.0,
-      "level": "HIGH"
-    }
-  ]
-}
-```
-
----
-
-### Supported Frameworks
-
-| Framework | Adapter | Status |
-|---|---|---|
-| **CrewAI** | `CrewAIAdapter` | Stable |
-| **LangGraph** | `LangGraphAdapter` | Stable |
-| **AutoGen** | `AutoGenAdapter` — `GroupChat`, `GroupChatManager`, `ConversableAgent` | Stable |
-| **Generic / static graph** | `BaseAdapter` | Stable |
-
----
-
-## Installation
-
-```bash
-pip install swarm-test
-# or with framework extras:
-pip install "swarm-test[crewai]"
-pip install "swarm-test[langgraph]"
-pip install "swarm-test[langchain]"
-pip install "swarm-test[autogen]"
-```
-
-From source:
-
-```bash
-git clone https://github.com/surajkumar811/swarm-test
-cd swarm-test
-pip install -e ".[dev]"
-```
-
----
-
-## Quick Start
-
-### With a CrewAI crew
-
-```python
-from crewai import Crew, Agent, Task
-from swarm_test import SwarmProbe
-
-researcher = Agent(role="researcher", goal="...", backstory="...")
-writer     = Agent(role="writer",     goal="...", backstory="...")
-crew = Crew(agents=[researcher, writer], tasks=[...])
-
-probe  = SwarmProbe(crew, swarm_name="my-crew")
-report = probe.run_all()
-report.print_summary()
-report.to_html("report.html")   # D3 graph visualization
-```
-
-### With a LangGraph workflow
-
-```python
-from langgraph.graph import StateGraph
-from swarm_test import SwarmProbe
-
-graph = StateGraph(dict)
-graph.add_node("researcher", researcher_fn)
-graph.add_node("writer", writer_fn)
-graph.add_edge("researcher", "writer")
-compiled = graph.compile()
-
-probe  = SwarmProbe(compiled, swarm_name="my-langgraph")
-report = probe.run_all()
-report.print_summary()
-report.to_json("report.json")   # Structured JSON with stable finding IDs
-```
-
-### With an AutoGen GroupChat
-
-```python
-from autogen import ConversableAgent, GroupChat, GroupChatManager
-from swarm_test import SwarmProbe
-
-planner  = ConversableAgent(name="Planner",  system_message="...")
-coder    = ConversableAgent(name="Coder",    system_message="...")
-reviewer = ConversableAgent(name="Reviewer", system_message="...")
-
-groupchat = GroupChat(
-    agents=[planner, coder, reviewer],
-    allowed_or_disallowed_speaker_transitions={
-        planner:  [coder],
-        coder:    [reviewer],
-        reviewer: [planner],
-    },
-    speaker_transitions_type="allowed",
-)
-manager = GroupChatManager(groupchat=groupchat)
-
-probe  = SwarmProbe(manager, swarm_name="my-autogen")
-report = probe.run_all()
-report.print_summary()
-```
-
-From the CLI:
-
-```bash
-swarm-test run autogen_app.py            # auto-detects `groupchat` / `manager`
-```
-
-### Static graph (no live swarm)
-
-```python
-from swarm_test import SwarmProbe, AgentNode, InteractionEvent, EventType
-
-a = AgentNode(name="Fetcher", role="researcher")
-b = AgentNode(name="Summarizer", role="writer")
-
-probe = SwarmProbe(
-    swarm_name="my-swarm",
-    agents=[a, b],
-    events=[InteractionEvent(
-        source_agent_id=a.id,
-        target_agent_id=b.id,
-        event_type=EventType.TASK_DELEGATE,
-    )],
-)
-report = probe.run_all()
-report.print_summary()
-```
-
-### CLI
-
-```bash
-# Run against a Python script containing a `crew` variable
-swarm-test probe my_crew.py --output report.html --fail-on-critical
-
-# Static scan from the command line
-swarm-test scan \
-  --agents Researcher --agents Analyst --agents Writer \
-  --edges "Researcher:Analyst" --edges "Analyst:Writer" \
-  --output report.html
-```
-
----
-
-## Configuration
-
-swarm-test supports a YAML config file for repeatable runs and CI gates.
-Copy the example and edit it to taste:
-
-```bash
-cp .swarmtest.example.yml .swarmtest.yml
-```
-
-A minimal `.swarmtest.yml`:
+<details>
+<summary><b>Configuration (.swarmtest.yml)</b></summary>
 
 ```yaml
 fail_on_severity: high        # critical | high | medium | low | info | none
-max_blast_radius: 0.5         # 0.0 - 1.0 — findings above this threshold fail
-disabled_tests:               # skip individual tests
+max_blast_radius: 0.5         # 0.0 – 1.0
+disabled_tests:
   - collusion
-sensitive_patterns:           # extra regexes added to the sensitive-data scanner
+sensitive_patterns:
   - "INTERNAL-[A-Z0-9]+"
-output_format: html           # console | json | markdown | html
+output_format: html
 output_path: ./swarm.html
-quick_scan: false
 timeout_seconds: 30
 strict: false                 # treat ANY finding as a failure
 ```
 
-Run with the new `run` subcommand:
+Auto-discovers `.swarmtest.yml`, `.swarmtest.yaml`, `swarmtest.yml`, or a `[tool.swarmtest]` table in `pyproject.toml`. CLI flags always override config-file values. Exit codes from `run`: `0` (passed), `1` (findings exceed thresholds), `2` (config or runtime error).
 
-```bash
-swarm-test run --config .swarmtest.yml
-swarm-test run -a "A,B,C" -e "A>B,B>C" --strict
-swarm-test run my_crew.py --config custom-config.yml --output-format json
-```
+</details>
 
-**Auto-discovery.** With no `--config` flag, swarm-test discovers
-`.swarmtest.yml`, `.swarmtest.yaml`, or `swarmtest.yml` in the project root,
-falling back to a `[tool.swarmtest]` table in `pyproject.toml`.
+<details>
+<summary><b>Plugin system</b></summary>
 
-**CLI flags always override config-file values.** Exit codes from `run`:
-`0` (passed), `1` (findings exceed thresholds), `2` (config or runtime error).
-
----
-
-## Architecture
-
-```
-swarm_test/
-├── core/
-│   ├── models.py       # Pydantic models (AgentNode, Finding, SwarmReport, …)
-│   ├── graph.py        # NetworkX SwarmGraph
-│   ├── interceptor.py  # Monkey-patch agent methods, sensitive-data scanner
-│   └── probe.py        # SwarmProbe — main entry point
-├── attacks/
-│   ├── cascade.py          # Cascade failure simulation
-│   ├── context_leakage.py  # Sensitive-data boundary check
-│   ├── intent_drift.py     # Role violations + goal hijacking
-│   ├── collusion.py        # Clique/echo-chamber/cycle detection
-│   └── blast_radius.py     # Topological SPOF + redundancy analysis
-├── integrations/
-│   ├── base.py                # BaseAdapter
-│   ├── crewai_adapter.py      # CrewAI Crew ingestion
-│   ├── langgraph_adapter.py   # LangGraph StateGraph / CompiledGraph ingestion
-│   └── autogen_adapter.py     # AutoGen GroupChat / ConversableAgent ingestion
-├── reporters/
-│   ├── console.py          # Rich terminal output
-│   └── html.py             # D3 force-directed graph report
-└── cli.py                  # Click CLI
-```
-
----
-
-## Report Output
-
-### Terminal (Rich)
-
-```
-─────────────────── SWARM-TEST RELIABILITY REPORT ───────────────────
-
- Summary
- Swarm: research-crew-demo    Framework: crewai
- Agents: 4   Edges: 6
- Risk Score: 45/100
- Duration: 12ms
-
-╭─────────────────── Test Results ─────────────────────╮
-│ Test                  Status   Findings  Critical  High │
-│ cascade_failure       FAILED       2         1       1  │
-│ context_leakage       PASSED       0         0       0  │
-│ intent_drift          PASSED       0         0       0  │
-│ collusion_detection   PASSED       0         0       0  │
-│ blast_radius          FAILED       1         1       0  │
-╰───────────────────────────────────────────────────────╯
-```
-
-### HTML Report
-
-Interactive D3.js force-directed graph showing agent nodes, interaction edges, and color-coded findings.
-
----
-
-## Plugin System
-
-Ship custom reliability tests as installable Python packages. swarm-test
-auto-discovers anything registered under the `swarm_test.plugins`
-entry-point group and runs it alongside the built-in chaos tests — the
-findings show up in the console, JSON, Markdown, and HTML reports.
-
-### Write a plugin in 10 lines
-
-```python
-from swarm_test.plugins import BasePlugin, PluginResult
-
-
-class MyPlugin(BasePlugin):
-    name = "my_custom_test"
-    version = "0.1.0"
-    description = "Checks for X"
-
-    def run(self, graph, agents, edges, config):
-        findings = []
-        # your test logic here
-        return PluginResult(
-            test_name=self.name,
-            status="passed" if not findings else "failed",
-            score=100,
-            findings=findings,
-            duration_ms=0.0,
-        )
-```
-
-### Register the plugin
-
-In your plugin package's `pyproject.toml`:
+Ship custom tests as installable Python packages. Register under the `swarm_test.plugins` entry-point group; swarm-test auto-discovers and runs them alongside the built-in tests:
 
 ```toml
 [project.entry-points."swarm_test.plugins"]
 my_custom_test = "my_package.plugins:MyPlugin"
 ```
 
-Then install it in the same environment as `swarm-test`:
-
 ```bash
-pip install -e .
-swarm-test plugins list   # → my_custom_test  0.1.0   Checks for X
-swarm-test plugins info my_custom_test
+swarm-test plugins list
 ```
 
-From this point on every `swarm-test run`, `probe`, and `scan` will execute
-your plugin and report its findings.
+See [`examples/plugin_template/`](examples/plugin_template/) for a runnable starter.
 
-Need a working starting point? See
-[`examples/plugin_template/`](examples/plugin_template/) for a fully
-runnable plugin package, and
-[`examples/example_plugin.py`](examples/example_plugin.py) for a
-single-file edge-count check.
+</details>
 
-## Extending
-
-### Custom attack
+<details>
+<summary><b>Framework examples (CrewAI, LangGraph, AutoGen, static)</b></summary>
 
 ```python
-from swarm_test.attacks.base import BaseAttack
-from swarm_test.core.models import Finding, Severity, TestResult
+# CrewAI
+from crewai import Crew
+from swarm_test import SwarmProbe
+SwarmProbe(crew, swarm_name="my-crew").run_all().print_summary()
 
-class MyCustomAttack(BaseAttack):
-    name = "my_custom_attack"
+# LangGraph
+from langgraph.graph import StateGraph
+from swarm_test import SwarmProbe
+SwarmProbe(compiled_graph, swarm_name="my-langgraph").run_all().to_json("report.json")
 
-    def run(self, graph):
-        findings = []
-        # ... analyze graph.graph, graph.events ...
-        return TestResult(test_name=self.name, findings=findings)
+# AutoGen
+from autogen import GroupChatManager
+from swarm_test import SwarmProbe
+SwarmProbe(manager, swarm_name="my-autogen").run_all().print_summary()
+
+# Static graph (no live framework)
+from swarm_test import SwarmProbe, AgentNode, InteractionEvent, EventType
+a = AgentNode(name="Fetcher", role="researcher")
+b = AgentNode(name="Summarizer", role="writer")
+SwarmProbe(
+    swarm_name="my-swarm",
+    agents=[a, b],
+    events=[InteractionEvent(source_agent_id=a.id, target_agent_id=b.id, event_type=EventType.TASK_DELEGATE)],
+).run_all().print_summary()
 ```
 
-### Custom adapter
-
-```python
-from swarm_test.integrations.base import BaseAdapter
-
-class MyFrameworkAdapter(BaseAdapter):
-    framework_name = "my-framework"
-
-    def _ingest_impl(self, swarm, graph):
-        for raw_agent in swarm.my_agents:
-            node = self._make_agent_node(raw_agent.name, raw_agent.role)
-            graph.add_agent(node)
-```
+</details>
 
 ---
 
-## Integrations
+## Links
 
-swarm-test exports (`agent_health` scores and structural findings) can feed runtime risk gates. Each integration has its own page under [`docs/integrations/`](docs/integrations/):
+- **PyPI:** https://pypi.org/project/swarm-test/ — `pip install swarm-test`
+- **Issues:** https://github.com/surajkumar811/swarm-test/issues
+- **License:** MIT — free and open source
 
-- [Black_Wall](docs/integrations/blackwall.md) — pre-action risk gate; consumes `agent_health` as a downside-only prior.
-
----
-
-## Development
-
-```bash
-pip install -e ".[dev]"
-pytest tests/ -v --cov=swarm_test
-ruff check swarm_test/
-black swarm_test/
-```
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+If swarm-test catches a real bug for you, please [star the repo](https://github.com/surajkumar811/swarm-test) — it helps other teams find it.
