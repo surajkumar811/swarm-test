@@ -10,10 +10,7 @@ from pathlib import Path
 import pytest
 
 from swarm_test import (
-    AgentNode,
-    EventType,
     Finding,
-    InteractionEvent,
     Severity,
     SwarmReport,
 )
@@ -25,7 +22,6 @@ from swarm_test.reporters.github import (
     format_annotation,
     swarm_score,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -159,9 +155,7 @@ def test_exit_code_pass(cli_run_args: list[str], tmp_path: Path) -> None:
     """fail_on_severity=none disables threshold enforcement → exit 0."""
     args = [*cli_run_args, "--github-action", "--fail-on-severity", "none"]
     env = {**os.environ, "GITHUB_ACTIONS": ""}
-    result = subprocess.run(
-        args, capture_output=True, text=True, env=env, timeout=60, cwd=tmp_path
-    )
+    result = subprocess.run(args, capture_output=True, text=True, env=env, timeout=60, cwd=tmp_path)
     assert result.returncode == 0, (
         f"expected exit 0, got {result.returncode}\n"
         f"stdout={result.stdout}\nstderr={result.stderr}"
@@ -172,9 +166,7 @@ def test_exit_code_fail(cli_run_args: list[str], tmp_path: Path) -> None:
     """A linear A>B>C topology surfaces SPOF/cascade findings → exit 1."""
     args = [*cli_run_args, "--github-action", "--fail-on-severity", "critical"]
     env = {**os.environ, "GITHUB_ACTIONS": ""}
-    result = subprocess.run(
-        args, capture_output=True, text=True, env=env, timeout=60, cwd=tmp_path
-    )
+    result = subprocess.run(args, capture_output=True, text=True, env=env, timeout=60, cwd=tmp_path)
     assert result.returncode == 1, (
         f"expected exit 1, got {result.returncode}\n"
         f"stdout={result.stdout}\nstderr={result.stderr}"
@@ -191,9 +183,7 @@ def test_github_action_env_detection(cli_run_args: list[str], tmp_path: Path) ->
     }
     # Use --fail-on-severity none so we can assert the summary even on clean runs.
     args = [*cli_run_args, "--fail-on-severity", "none"]
-    result = subprocess.run(
-        args, capture_output=True, text=True, env=env, timeout=60, cwd=tmp_path
-    )
+    result = subprocess.run(args, capture_output=True, text=True, env=env, timeout=60, cwd=tmp_path)
     assert result.returncode in (0, 1)
     assert summary_file.exists()
     assert "swarm-test" in summary_file.read_text()

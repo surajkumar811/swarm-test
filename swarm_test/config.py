@@ -39,6 +39,7 @@ VALID_TEST_NAMES: tuple[str, ...] = (
     "timeout",
     "sensitive_data",
     "contract_violation",
+    "trajectory_analysis",
 )
 
 CONFIG_FILENAMES: tuple[str, ...] = (".swarmtest.yml", ".swarmtest.yaml", "swarmtest.yml")
@@ -52,6 +53,7 @@ TEST_NAME_TO_ATTACK: dict[str, str] = {
     "blast_radius": "BlastRadiusAttack",
     "timeout": "TimeoutResilienceAttack",
     "sensitive_data": "ContextLeakageAttack",  # sensitive_data is a sub-feature of context_leakage
+    "trajectory_analysis": "TrajectoryAttack",
 }
 
 
@@ -95,6 +97,10 @@ class SwarmConfig(BaseModel):
     timeout_seconds: float = Field(
         default=30.0,
         description="Timeout for the timeout-resilience test (seconds).",
+    )
+    max_trajectory_depth: int = Field(
+        default=5,
+        description="Cycle length above which trajectory_analysis flags a deep cyclic path.",
     )
     strict: bool = Field(
         default=False,
@@ -182,6 +188,13 @@ class SwarmConfig(BaseModel):
         if v <= 0:
             raise ValueError(f"timeout_seconds must be > 0 — got {v}")
         return float(v)
+
+    @field_validator("max_trajectory_depth")
+    @classmethod
+    def _check_trajectory_depth(cls, v: int) -> int:
+        if v < 2:
+            raise ValueError(f"max_trajectory_depth must be >= 2 — got {v}")
+        return int(v)
 
     @field_validator("history_keep")
     @classmethod

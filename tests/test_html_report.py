@@ -15,12 +15,9 @@ import pytest
 from swarm_test import (
     AgentNode,
     EventType,
-    Finding,
     InteractionEvent,
-    Severity,
     SwarmProbe,
 )
-from swarm_test.core.models import TestResult, TestStatus
 from swarm_test.reporters.html import HtmlReporter
 
 
@@ -73,8 +70,7 @@ def test_html_report_contains_swarm_score(rendered_report: tuple[str, Path]) -> 
     assert re.search(r"gauge-score[^>]*>\s*\d+\s*</div>", html), "score missing from gauge"
     # One of the certification levels must appear as a badge
     assert any(
-        level in html
-        for level in ("EXCELLENT", "GOOD", "NEEDS IMPROVEMENT", "AT RISK", "CRITICAL")
+        level in html for level in ("EXCELLENT", "GOOD", "NEEDS IMPROVEMENT", "AT RISK", "CRITICAL")
     )
 
 
@@ -112,18 +108,12 @@ def test_html_report_contains_findings(rendered_report: tuple[str, Path]) -> Non
 def test_html_report_self_contained(rendered_report: tuple[str, Path]) -> None:
     """The report is self-contained except for the D3 CDN."""
     html, _ = rendered_report
-    # Exactly one external resource: the D3 CDN
-    external_links = re.findall(
-        r"https?://[^\s\"'<>]+", html, flags=re.IGNORECASE
-    )
-    # Filter to actual asset loads (src= / href=) — comments and footer links
-    # are fine.
-    asset_loads = re.findall(
-        r"""<(?:script|link|img)[^>]+(?:src|href)=["']([^"']+)["']""", html
-    )
+    # Exactly one external resource: the D3 CDN. Comments and footer links
+    # are fine — filter to actual asset loads (src= / href=).
+    asset_loads = re.findall(r"""<(?:script|link|img)[^>]+(?:src|href)=["']([^"']+)["']""", html)
     for url in asset_loads:
-        assert url.startswith("https://d3js.org/") or url.startswith("#"), (
-            f"unexpected external dependency: {url}"
-        )
+        assert url.startswith("https://d3js.org/") or url.startswith(
+            "#"
+        ), f"unexpected external dependency: {url}"
     # No <link rel="stylesheet"> external imports
-    assert "rel=\"stylesheet\"" not in html and "rel='stylesheet'" not in html
+    assert 'rel="stylesheet"' not in html and "rel='stylesheet'" not in html

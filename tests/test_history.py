@@ -6,8 +6,6 @@ import time
 import uuid
 from pathlib import Path
 
-import pytest
-
 from swarm_test import Finding, Severity, SwarmReport, TestResult, TestStatus
 from swarm_test.history import HistoryStore
 from swarm_test.scoring.agent_health import AgentHealthScore
@@ -87,9 +85,7 @@ def test_load_recent_returns_newest_first(tmp_path: Path) -> None:
     entries = store.load_recent(n=10)
     timestamps = [e["timestamp"] for e in entries]
     assert len(entries) == 3
-    assert timestamps == sorted(timestamps, reverse=True), (
-        "Entries should be newest-first"
-    )
+    assert timestamps == sorted(timestamps, reverse=True), "Entries should be newest-first"
 
 
 def test_load_recent_respects_n(tmp_path: Path) -> None:
@@ -333,9 +329,7 @@ def test_swarm_score_does_not_saturate_at_zero() -> None:
     """
     report = _make_report(
         swarm_name="alpha",
-        findings=[
-            _finding(Severity.CRITICAL, title=f"Crit {i}") for i in range(3)
-        ],
+        findings=[_finding(Severity.CRITICAL, title=f"Crit {i}") for i in range(3)],
     )
     assert report.swarm_score > 20
 

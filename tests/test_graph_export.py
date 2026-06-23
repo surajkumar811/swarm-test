@@ -9,10 +9,8 @@ from unittest.mock import patch
 import pytest
 
 from swarm_test import AgentNode, EventType, InteractionEvent
-from swarm_test.core.graph import SwarmGraph
 from swarm_test.core.probe import SwarmProbe
 from swarm_test.reporters import graph_export
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures

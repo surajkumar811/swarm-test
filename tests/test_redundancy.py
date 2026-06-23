@@ -6,7 +6,6 @@ from swarm_test import AgentNode, EventType, InteractionEvent, SwarmProbe
 from swarm_test.core.graph import SwarmGraph
 from swarm_test.core.models import redundancy_level
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -44,7 +43,11 @@ def test_single_agent_zero_redundancy():
 
 def test_linear_chain_middle_lowest():
     """A->B->C: B is the middle hop and should score lowest (SPOF)."""
-    a, b, c = _make_agent("A", "researcher"), _make_agent("B", "analyst"), _make_agent("C", "writer")
+    a, b, c = (
+        _make_agent("A", "researcher"),
+        _make_agent("B", "analyst"),
+        _make_agent("C", "writer"),
+    )
     graph = SwarmGraph()
     for ag in (a, b, c):
         graph.add_agent(ag)
@@ -154,9 +157,7 @@ def test_redundancy_in_json_export():
             "FULLY REDUNDANT",
         }
     # Overall is the mean
-    expected = round(
-        sum(r["score"] for r in data["redundancy_scores"]) / 3, 2
-    )
+    expected = round(sum(r["score"] for r in data["redundancy_scores"]) / 3, 2)
     assert abs(data["overall_redundancy"] - expected) < 0.01
 
 

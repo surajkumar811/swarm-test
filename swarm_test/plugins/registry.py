@@ -33,6 +33,7 @@ BUILTIN_TEST_NAMES: frozenset[str] = frozenset(
         "timeout_resilience",
         "sensitive_data",
         "contract_violation",
+        "trajectory_analysis",
     }
 )
 

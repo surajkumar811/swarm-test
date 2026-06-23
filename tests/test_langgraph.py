@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
-from swarm_test import AgentNode, EventType, InteractionEvent, SwarmProbe
+from swarm_test import SwarmProbe
 from swarm_test.core.graph import SwarmGraph
 from swarm_test.integrations.langgraph_adapter import LangGraphAdapter
 
@@ -144,7 +142,8 @@ class TestLangGraphAdapter:
         )
         report = probe.run_all()
 
-        assert len(report.test_results) == 6
+        assert len(report.test_results) == 7
         test_names = {r.test_name for r in report.test_results}
         assert "timeout_resilience" in test_names
+        assert "trajectory_analysis" in test_names
         assert report.agent_count == 3

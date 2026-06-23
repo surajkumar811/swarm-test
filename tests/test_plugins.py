@@ -17,7 +17,6 @@ from swarm_test import (
 from swarm_test.config import SwarmConfig
 from swarm_test.plugins import BasePlugin, PluginRegistry, PluginResult
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -181,7 +180,9 @@ def test_plugin_exception_handling(caplog) -> None:
         report = probe.run_all()
 
     # Built-in tests + 2 plugins
-    plugin_results = [r for r in report.test_results if r.test_name in {"boom_plugin", "good_plugin"}]
+    plugin_results = [
+        r for r in report.test_results if r.test_name in {"boom_plugin", "good_plugin"}
+    ]
     assert len(plugin_results) == 2
     boom = next(r for r in plugin_results if r.test_name == "boom_plugin")
     assert boom.status.value == "error"

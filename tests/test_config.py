@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
 
-from swarm_test import AgentNode, EventType, Finding, InteractionEvent, Severity, SwarmReport
+from swarm_test import AgentNode, Finding, Severity, SwarmReport
 from swarm_test.config import (
     VALID_SEVERITIES,
     SwarmConfig,

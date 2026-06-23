@@ -22,7 +22,6 @@ from swarm_test.contracts.schema import (
 )
 from swarm_test.core.graph import SwarmGraph
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -240,9 +239,7 @@ class TestContractViolationAttack:
 
     def test_valid_output_no_findings(self) -> None:
         reg = self._registry()
-        g = _graph_with_output(
-            "researcher", {"summary": "ok", "confidence": 0.9}
-        )
+        g = _graph_with_output("researcher", {"summary": "ok", "confidence": 0.9})
         attack = ContractViolationTest(reg)
         result = attack.run(g)
         assert result.findings == []
@@ -265,9 +262,7 @@ class TestContractViolationAttack:
 
     def test_type_mismatch_creates_high(self) -> None:
         reg = self._registry()
-        g = _graph_with_output(
-            "researcher", {"summary": "ok", "confidence": "high"}
-        )
+        g = _graph_with_output("researcher", {"summary": "ok", "confidence": "high"})
         attack = ContractViolationTest(reg)
         result = attack.run(g)
         high = [f for f in result.findings if f.severity == Severity.HIGH]
@@ -300,9 +295,7 @@ class TestContractViolationAttack:
         )
         attack = ContractViolationTest(reg)
         result = attack.run(g)
-        edge_findings = [
-            f for f in result.findings if f.evidence.get("target_role") == "analyst"
-        ]
+        edge_findings = [f for f in result.findings if f.evidence.get("target_role") == "analyst"]
         assert len(edge_findings) >= 1
 
 
@@ -378,9 +371,7 @@ class TestSwarmProbeContracts:
         contract_result = next(
             r for r in report.test_results if r.test_name == "contract_violation"
         )
-        assert any(
-            f.severity == Severity.CRITICAL for f in contract_result.findings
-        )
+        assert any(f.severity == Severity.CRITICAL for f in contract_result.findings)
 
     def test_invalid_contracts_type_raises(self) -> None:
         with pytest.raises(TypeError):

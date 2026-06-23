@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from datetime import datetime
 
 from swarm_test import (
     AgentNode,
@@ -16,16 +15,16 @@ from swarm_test import (
     TestResult,
     TestStatus,
 )
-from swarm_test.core.graph import SwarmGraph
-from swarm_test.core.interceptor import check_sensitive_leakage, AgentInterceptor
-from swarm_test.attacks.cascade import CascadeFailureAttack
 from swarm_test.attacks.blast_radius import BlastRadiusAttack
-from swarm_test.attacks.context_leakage import ContextLeakageAttack, SensitiveDataScanner, scan_text
-from swarm_test.scoring.agent_health import AgentHealthScorer, AgentHealthScore
-from swarm_test.comparison import ReportComparator, ChangeType
-from swarm_test.attacks.intent_drift import IntentDriftAttack
+from swarm_test.attacks.cascade import CascadeFailureAttack
 from swarm_test.attacks.collusion import CollusionDetectionAttack
+from swarm_test.attacks.context_leakage import ContextLeakageAttack, scan_text
+from swarm_test.attacks.intent_drift import IntentDriftAttack
 from swarm_test.attacks.timeout_resilience import TimeoutResilienceAttack
+from swarm_test.comparison import ChangeType, ReportComparator
+from swarm_test.core.graph import SwarmGraph
+from swarm_test.core.interceptor import AgentInterceptor, check_sensitive_leakage
+from swarm_test.scoring.agent_health import AgentHealthScore, AgentHealthScorer
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -495,7 +494,7 @@ class TestSwarmProbe:
         report = probe.run_all()
         assert report is not None
         assert report.swarm_name == "test-swarm"
-        assert len(report.test_results) == 6
+        assert len(report.test_results) == 7
         # print_summary shouldn't raise
         report.print_summary()
 
@@ -534,6 +533,7 @@ class TestSwarmProbe:
             "collusion_detection",
             "blast_radius",
             "timeout_resilience",
+            "trajectory_analysis",
         }
         assert test_names == expected
 
@@ -563,7 +563,7 @@ class TestSwarmProbe:
 
         reporter = HtmlReporter()
         output = str(tmp_path / "test_report.html")
-        path = reporter.render_with_graph(report, probe.graph, output)
+        reporter.render_with_graph(report, probe.graph, output)
         assert (tmp_path / "test_report.html").exists()
         content = (tmp_path / "test_report.html").read_text()
         assert "swarm-test Reliability Report" in content
@@ -1019,7 +1019,15 @@ class TestJsonExport:
         """risk_type should map test_name to short category names."""
         report, graph = self._make_report()
         data = report.to_json(graph=graph)
-        valid_types = {"cascade", "leakage", "collusion", "drift", "timeout", "blast_radius"}
+        valid_types = {
+            "cascade",
+            "leakage",
+            "collusion",
+            "drift",
+            "timeout",
+            "blast_radius",
+            "trajectory",
+        }
         for finding in data["findings"]:
             assert (
                 finding["risk_type"] in valid_types
@@ -1481,7 +1489,6 @@ class TestMarkdownReporter:
 
     def _make_report(self):
         """Build a small report with findings and health scores."""
-        from swarm_test.scoring.agent_health import AgentHealthScore
 
         report = SwarmReport(
             swarm_name="test-swarm",

@@ -41,6 +41,7 @@ swarm-test run -a "Orchestrator,Worker1,Worker2" -e "Orchestrator>Worker1,Orches
 - Agents drifting from their assigned role; prompt-injection-style goal hijacking — *intent drift*
 - A slow upstream with no timeout boundary blocking the whole pipeline — *timeout resilience*
 - Dense cliques, echo chambers, and cycles that bypass the orchestrator — *collusion detection*
+- Agents stuck in loops — runaway step counts and retry storms that burn tokens with no error thrown — *trajectory analysis*
 - Output schema mismatches across agent edges — *contract violation* (opt-in; provide a contracts YAML)
 
 ## Features
@@ -109,6 +110,7 @@ swarm-test builds a NetworkX directed graph from your agent system — nodes are
 - **Intent drift** — flags agents whose observed behavior diverges from their declared role; includes prompt-injection heuristics.
 - **Collusion** — finds dense cliques, echo chambers, and cycles that bypass the declared orchestrator.
 - **Timeout resilience** — identifies long synchronous chains with no timeout boundary.
+- **Trajectory analysis** — flags self-loops, ping-pong pairs, multi-agent feedback cycles, unbounded loops with no exit, repeated parallel calls, and cycles deeper than `max_trajectory_depth` (default 5).
 - **Contract violation** — validates agent outputs against JSON schemas declared per edge (opt-in; pass `--contracts contracts.yml`).
 
 Roles are classified from structural metrics (in/out degree, betweenness centrality) plus naming hints, each with a 0–100% confidence score. Severity is then role-adjusted: an orchestrator with high blast radius is expected and gets downgraded; a validator leaking context is a security incident and gets upgraded.

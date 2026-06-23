@@ -190,6 +190,7 @@ class SwarmProbe:
         from swarm_test.attacks.contract_violation import ContractViolationTest
         from swarm_test.attacks.intent_drift import IntentDriftAttack
         from swarm_test.attacks.timeout_resilience import TimeoutResilienceAttack
+        from swarm_test.attacks.trajectory import TrajectoryAttack
 
         # Short test-name → attack instance
         all_attacks: dict[str, Any] = {
@@ -199,6 +200,7 @@ class SwarmProbe:
             "collusion": CollusionDetectionAttack(),
             "blast_radius": BlastRadiusAttack(),
             "timeout": TimeoutResilienceAttack(),
+            "trajectory_analysis": TrajectoryAttack(),
         }
         if contracts is not None:
             all_attacks["contract_violation"] = ContractViolationTest(contracts)
@@ -219,6 +221,7 @@ class SwarmProbe:
         if config is not None:
             extra_patterns = getattr(config, "sensitive_patterns", None) or []
             timeout_seconds = getattr(config, "timeout_seconds", None)
+            max_trajectory_depth = getattr(config, "max_trajectory_depth", None)
             for atk in attacks:
                 # Extra sensitive patterns → ContextLeakageAttack scanner
                 if isinstance(atk, ContextLeakageAttack) and extra_patterns:
@@ -245,6 +248,9 @@ class SwarmProbe:
                 # Timeout config → TimeoutResilienceAttack
                 if isinstance(atk, TimeoutResilienceAttack) and timeout_seconds is not None:
                     setattr(atk, "timeout_seconds", float(timeout_seconds))
+                # Trajectory config → TrajectoryAttack
+                if isinstance(atk, TrajectoryAttack) and max_trajectory_depth is not None:
+                    atk.max_trajectory_depth = int(max_trajectory_depth)
 
         return attacks
 
@@ -253,7 +259,7 @@ class SwarmProbe:
     # ------------------------------------------------------------------
 
     def run_all(self, *, timeout_per_test: float = 30.0) -> SwarmReport:
-        """Run all 6 chaos tests and return the aggregated SwarmReport."""
+        """Run every registered built-in chaos test and return the aggregated SwarmReport."""
         started = datetime.now(timezone.utc)
         results: list[TestResult] = []
 

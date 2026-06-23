@@ -323,6 +323,7 @@ class SwarmReport(BaseModel):
             "intent_drift": "drift",
             "timeout_resilience": "timeout",
             "blast_radius": "blast_radius",
+            "trajectory_analysis": "trajectory",
         }
 
         enriched_findings: list[dict[str, Any]] = []

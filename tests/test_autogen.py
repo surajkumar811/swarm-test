@@ -46,9 +46,7 @@ class MockGroupChat:
     ) -> None:
         self.agents = agents
         self.messages = messages or []
-        self.allowed_or_disallowed_speaker_transitions = (
-            allowed_or_disallowed_speaker_transitions
-        )
+        self.allowed_or_disallowed_speaker_transitions = allowed_or_disallowed_speaker_transitions
         self.speaker_transitions_type = speaker_transitions_type
         self.speaker_selection_method = speaker_selection_method
 
@@ -198,10 +196,7 @@ class TestAutoGenAdapter:
 
         planner = next(a for a in agents if a.name == "Planner")
         assert "break work into tasks" in planner.role
-        assert (
-            planner.metadata["system_message"]
-            == "You break work into tasks and assign them."
-        )
+        assert planner.metadata["system_message"] == "You break work into tasks and assign them."
 
     def test_autogen_full_integration(self):
         """SwarmProbe runs all chaos tests end-to-end on an AutoGen GroupChat."""
@@ -213,9 +208,9 @@ class TestAutoGenAdapter:
 
         assert report.framework == "autogen"
         assert report.agent_count == 4
-        # All 6 chaos tests should execute (cascade, context_leakage,
-        # intent_drift, collusion, blast_radius, timeout_resilience)
-        assert len(report.test_results) == 6
+        # All built-in chaos tests should execute.
+        assert len(report.test_results) == 7
         test_names = {r.test_name for r in report.test_results}
         assert "timeout_resilience" in test_names
         assert "blast_radius" in test_names
+        assert "trajectory_analysis" in test_names
