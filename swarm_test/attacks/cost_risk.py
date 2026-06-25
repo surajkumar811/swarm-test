@@ -20,13 +20,27 @@ from swarm_test.core.models import Finding, Severity, TestResult, TestStatus
 
 logger = logging.getLogger(__name__)
 
-# Score thresholds for the 0-100 Cost Risk Score.
+# Score thresholds for the 0-100 Cost Risk Score. Each tuple is
+# (inclusive_upper_bound, label). Bands: 0–24 LOW, 25–49 MODERATE,
+# 50–74 HIGH, 75–100 SEVERE. The severity floors below (CRITICAL→75,
+# HIGH→50, MEDIUM→25) land exactly at these band starts so the score
+# number and the verdict word always agree.
 _VERDICT_BANDS: tuple[tuple[int, str], ...] = (
-    (20, "LOW"),
-    (50, "MODERATE"),
-    (80, "HIGH"),
+    (24, "LOW"),
+    (49, "MODERATE"),
+    (74, "HIGH"),
     (100, "SEVERE"),
 )
+
+# Severity-based floors: a CRITICAL cost finding pins the score into the
+# SEVERE band even if the additive weights would have under-reported it.
+# Without this, a single unbounded-loop CRITICAL could read MODERATE,
+# which contradicts what the finding itself says.
+_SEVERITY_FLOORS: dict[Severity, int] = {
+    Severity.CRITICAL: 75,
+    Severity.HIGH: 50,
+    Severity.MEDIUM: 25,
+}
 
 # Honest framing for every finding description — keeps the free/paid boundary
 # explicit without naming any paid product.
@@ -142,7 +156,10 @@ class CostRiskAttack(BaseAttack):
                 f"{len(fanout_findings)} high fan-out node{'s' if len(fanout_findings) != 1 else ''}"
             )
 
-        # Clamp + verdict.
+        # Severity floor: the verdict band must never under-report the worst
+        # finding. A single CRITICAL pins the score into SEVERE regardless of
+        # how light the additive weights came out. Then clamp into [0, 100].
+        score = max(score, _severity_floor(findings))
         score = max(0, min(100, score))
         verdict = _verdict_for(score)
 
@@ -517,8 +534,26 @@ class CostRiskAttack(BaseAttack):
 
 
 def _verdict_for(score: int) -> str:
-    """Map a 0-100 cost-risk score to LOW / MODERATE / HIGH / SEVERE."""
+    """Map a 0-100 cost-risk score to LOW / MODERATE / HIGH / SEVERE.
+
+    Bands: 0–24 LOW, 25–49 MODERATE, 50–74 HIGH, 75–100 SEVERE.
+    """
     for ceiling, label in _VERDICT_BANDS:
         if score <= ceiling:
             return label
     return _VERDICT_BANDS[-1][1]
+
+
+def _severity_floor(findings: list[Finding]) -> int:
+    """Minimum score implied by the highest-severity finding present.
+
+    Walks ``_SEVERITY_FLOORS`` highest-first and returns the floor for the
+    most severe finding. Returns 0 when no qualifying finding exists.
+    """
+    if not findings:
+        return 0
+    severities = {f.severity for f in findings}
+    for sev, floor in _SEVERITY_FLOORS.items():
+        if sev in severities:
+            return floor
+    return 0

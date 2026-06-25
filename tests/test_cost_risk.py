@@ -80,23 +80,18 @@ def test_unbounded_loop_is_critical_cost_risk() -> None:
 
 
 def test_feedback_loop_scales_cost_with_length() -> None:
-    # 3-node feedback loop with exit
-    short_graph, _ = _build_graph(
-        agents=["A", "B", "C", "Exit"],
-        edges=[("A", "B"), ("B", "C"), ("C", "A"), ("A", "Exit")],
-    )
-    # 5-node feedback loop with exit
-    long_graph, _ = _build_graph(
-        agents=["A", "B", "C", "D", "E", "Exit"],
-        edges=[
-            ("A", "B"),
-            ("B", "C"),
-            ("C", "D"),
-            ("D", "E"),
-            ("E", "A"),
-            ("A", "Exit"),
-        ],
-    )
+    # Compare two feedback cycles whose raw weights both exceed the HIGH
+    # severity floor (50), so the additive length-based scaling is observable
+    # in the final score. A short cycle below the floor would clamp to the
+    # floor and hide the scaling — which is correct, but not what this test
+    # is exercising.
+    def _cycle_with_exit(n: int):
+        nodes = [f"N{i}" for i in range(n)] + ["Exit"]
+        cycle_edges = [(f"N{i}", f"N{(i + 1) % n}") for i in range(n)]
+        return _build_graph(agents=nodes, edges=cycle_edges + [("N0", "Exit")])
+
+    short_graph, _ = _cycle_with_exit(8)
+    long_graph, _ = _cycle_with_exit(14)
 
     short_score = CostRiskAttack().run(short_graph).metrics["cost_risk_score"]
     long_score = CostRiskAttack().run(long_graph).metrics["cost_risk_score"]
@@ -170,17 +165,19 @@ def test_high_fanout_adds_cost() -> None:
 
 
 def test_clean_dag_low_cost_risk() -> None:
-    # Diamond DAG with redundant paths — no cycles, no fragile retry chain,
-    # short critical path, no fan-out blow-up.
+    # Fan-in DAG: two roots feed a worker that produces a single sink.
+    # No cycles, no single-upstream-with-downstream node (Worker has two
+    # upstreams; Sink has no downstream), short path, low fan-out. This
+    # topology is genuinely clean — no findings, no severity floor.
     graph, _ = _build_graph(
-        agents=["Root", "L1", "L2", "Sink"],
-        edges=[("Root", "L1"), ("Root", "L2"), ("L1", "Sink"), ("L2", "Sink")],
+        agents=["Root1", "Root2", "Worker", "Sink"],
+        edges=[("Root1", "Worker"), ("Root2", "Worker"), ("Worker", "Sink")],
     )
     result = CostRiskAttack().run(graph)
 
     score = result.metrics["cost_risk_score"]
     verdict = result.metrics["cost_risk_verdict"]
-    assert score <= 20, f"Clean DAG should have LOW cost risk, got {score}"
+    assert score <= 24, f"Clean DAG should have LOW cost risk, got {score}"
     assert verdict == "LOW", f"Expected LOW verdict, got {verdict}"
 
 
@@ -356,6 +353,84 @@ def test_empty_graph_no_findings() -> None:
     result = CostRiskAttack().run(SwarmGraph())
     assert result.findings == []
     assert result.metrics["cost_risk_score"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Severity-floor tests — score must never under-report the worst finding.
+# ---------------------------------------------------------------------------
+
+
+def test_unbounded_loop_floors_score_to_severe() -> None:
+    """A CRITICAL cost_risk finding floors the score into the SEVERE band."""
+    graph, _ = _build_graph(
+        agents=["A", "B"],
+        edges=[("A", "B"), ("B", "A")],
+    )
+    result = CostRiskAttack().run(graph)
+
+    # Sanity: the unbounded-loop CRITICAL finding is actually produced.
+    assert any(f.severity == Severity.CRITICAL for f in result.findings)
+    score = result.metrics["cost_risk_score"]
+    verdict = result.metrics["cost_risk_verdict"]
+    assert score >= 75, f"CRITICAL finding must floor score to SEVERE band, got {score}"
+    assert verdict == "SEVERE", f"Expected SEVERE band, got {verdict}"
+
+
+def test_high_finding_floors_to_high() -> None:
+    """A HIGH cost_risk finding (no CRITICAL) floors the score into the HIGH band."""
+    # Linear chain A→B→C: B has exactly one upstream and one downstream →
+    # one retry-prone HIGH finding. No cycles, no self-loop, so no CRITICAL.
+    graph, _ = _build_graph(
+        agents=["A", "B", "C"],
+        edges=[("A", "B"), ("B", "C")],
+    )
+    result = CostRiskAttack().run(graph)
+
+    severities = {f.severity for f in result.findings}
+    assert Severity.HIGH in severities, "Expected at least one HIGH finding"
+    assert Severity.CRITICAL not in severities, "Did not expect any CRITICAL finding"
+
+    score = result.metrics["cost_risk_score"]
+    verdict = result.metrics["cost_risk_verdict"]
+    assert score >= 50, f"HIGH finding must floor score to >= 50, got {score}"
+    assert verdict in {"HIGH", "SEVERE"}, f"Expected HIGH/SEVERE band, got {verdict}"
+
+
+def test_clean_dag_stays_low() -> None:
+    """A truly clean DAG (no cost_risk findings) stays in the LOW band."""
+    # Fan-in DAG with no single-upstream-with-downstream nodes → 0 findings.
+    graph, _ = _build_graph(
+        agents=["Root1", "Root2", "Worker", "Sink"],
+        edges=[("Root1", "Worker"), ("Root2", "Worker"), ("Worker", "Sink")],
+    )
+    result = CostRiskAttack().run(graph)
+
+    assert (
+        result.findings == []
+    ), f"Expected zero findings on a clean DAG, got: {[f.title for f in result.findings]}"
+    score = result.metrics["cost_risk_score"]
+    verdict = result.metrics["cost_risk_verdict"]
+    assert score <= 24, f"Clean DAG score must be in LOW band (0-24), got {score}"
+    assert verdict == "LOW", f"Expected LOW band, got {verdict}"
+
+
+def test_verdict_band_thresholds_align_with_floors() -> None:
+    """The band label derives from the same thresholds as the severity floors.
+
+    Specifically: 0-24 LOW, 25-49 MODERATE, 50-74 HIGH, 75-100 SEVERE — and
+    the CRITICAL/HIGH/MEDIUM floor values 75/50/25 land exactly on the band
+    starts, so the score number and the verdict word always agree.
+    """
+    from swarm_test.attacks.cost_risk import _verdict_for
+
+    assert _verdict_for(0) == "LOW"
+    assert _verdict_for(24) == "LOW"
+    assert _verdict_for(25) == "MODERATE"
+    assert _verdict_for(49) == "MODERATE"
+    assert _verdict_for(50) == "HIGH"
+    assert _verdict_for(74) == "HIGH"
+    assert _verdict_for(75) == "SEVERE"
+    assert _verdict_for(100) == "SEVERE"
 
 
 if __name__ == "__main__":  # pragma: no cover
