@@ -209,8 +209,9 @@ class TestAutoGenAdapter:
         assert report.framework == "autogen"
         assert report.agent_count == 4
         # All built-in chaos tests should execute.
-        assert len(report.test_results) == 7
+        assert len(report.test_results) == 8
         test_names = {r.test_name for r in report.test_results}
         assert "timeout_resilience" in test_names
         assert "blast_radius" in test_names
         assert "trajectory_analysis" in test_names
+        assert "cost_risk" in test_names

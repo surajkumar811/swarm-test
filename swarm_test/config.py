@@ -40,6 +40,7 @@ VALID_TEST_NAMES: tuple[str, ...] = (
     "sensitive_data",
     "contract_violation",
     "trajectory_analysis",
+    "cost_risk",
 )
 
 CONFIG_FILENAMES: tuple[str, ...] = (".swarmtest.yml", ".swarmtest.yaml", "swarmtest.yml")
@@ -54,6 +55,7 @@ TEST_NAME_TO_ATTACK: dict[str, str] = {
     "timeout": "TimeoutResilienceAttack",
     "sensitive_data": "ContextLeakageAttack",  # sensitive_data is a sub-feature of context_leakage
     "trajectory_analysis": "TrajectoryAttack",
+    "cost_risk": "CostRiskAttack",
 }
 
 

@@ -102,6 +102,34 @@ def _headline_text(report: SwarmReport) -> Text:
     return Text.from_markup(f"[{style}]Swarm Score: {score}/100 — {level}[/] ({findings_part})")
 
 
+_COST_RISK_STYLE = {
+    "LOW": "green",
+    "MODERATE": "yellow",
+    "HIGH": "red",
+    "SEVERE": "bold bright_red",
+}
+
+
+def _cost_risk_text(report: SwarmReport) -> Text | None:
+    """Build the optional Cost Risk headline line below the Swarm Score.
+
+    Returns None when cost_risk produced no findings — we only show the line
+    when it carries signal.
+    """
+    score = report.cost_risk_score
+    verdict = report.cost_risk_verdict
+    if score is None or verdict is None:
+        return None
+    # Only render when cost_risk produced findings (i.e., non-zero signal).
+    cost_findings = [f for f in report.all_findings if f.test_name == "cost_risk"]
+    if not cost_findings:
+        return None
+    drivers = report.cost_risk_drivers
+    drivers_part = f" ({', '.join(drivers)})" if drivers else ""
+    style = _COST_RISK_STYLE.get(verdict, "white")
+    return Text.from_markup(f"[{style}]Cost Risk: {score}/100 — {verdict}[/]{drivers_part}")
+
+
 class ConsoleReporter:
     """Renders a SwarmReport to the terminal using Rich."""
 
@@ -118,6 +146,11 @@ class ConsoleReporter:
 
         # Headline verdict is always the first line.
         c.print(_headline_text(report))
+
+        # Optional second headline: Cost Risk Score (only when findings exist).
+        cost_line = _cost_risk_text(report)
+        if cost_line is not None:
+            c.print(cost_line)
 
         if verbosity == "quiet":
             return
@@ -242,13 +275,23 @@ class ConsoleReporter:
         score_color = (
             "green" if swarm_score_val >= 75 else "yellow" if swarm_score_val >= 50 else "red"
         )
+        cost_score = report.cost_risk_score
+        cost_verdict = report.cost_risk_verdict
+        cost_line = ""
+        if cost_score is not None and cost_verdict is not None:
+            cost_color = _COST_RISK_STYLE.get(cost_verdict, "white")
+            cost_line = (
+                f"\n[bold]Cost Risk:[/bold] [{cost_color}]"
+                f"{cost_score}/100 — {cost_verdict}[/{cost_color}]"
+            )
         header_text = (
             f"[bold]Swarm:[/bold] {report.swarm_name}\n"
             f"[bold]Framework:[/bold] {report.framework}\n"
             f"[bold]Agents:[/bold] {report.agent_count}   "
             f"[bold]Edges:[/bold] {report.edge_count}\n"
             f"[bold]Swarm Score:[/bold] [{score_color}]{swarm_score_val}/100"
-            f" — {report.certification_level}[/{score_color}]\n"
+            f" — {report.certification_level}[/{score_color}]"
+            f"{cost_line}\n"
             f"[bold]Duration:[/bold] {report.total_duration_ms:.0f}ms"
         )
         c.print(Panel(header_text, title="[bold]Summary[/bold]", border_style="blue"))

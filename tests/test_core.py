@@ -494,7 +494,7 @@ class TestSwarmProbe:
         report = probe.run_all()
         assert report is not None
         assert report.swarm_name == "test-swarm"
-        assert len(report.test_results) == 7
+        assert len(report.test_results) == 8
         # print_summary shouldn't raise
         report.print_summary()
 
@@ -534,6 +534,7 @@ class TestSwarmProbe:
             "blast_radius",
             "timeout_resilience",
             "trajectory_analysis",
+            "cost_risk",
         }
         assert test_names == expected
 

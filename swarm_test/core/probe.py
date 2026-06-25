@@ -188,6 +188,7 @@ class SwarmProbe:
         from swarm_test.attacks.collusion import CollusionDetectionAttack
         from swarm_test.attacks.context_leakage import ContextLeakageAttack
         from swarm_test.attacks.contract_violation import ContractViolationTest
+        from swarm_test.attacks.cost_risk import CostRiskAttack
         from swarm_test.attacks.intent_drift import IntentDriftAttack
         from swarm_test.attacks.timeout_resilience import TimeoutResilienceAttack
         from swarm_test.attacks.trajectory import TrajectoryAttack
@@ -201,6 +202,7 @@ class SwarmProbe:
             "blast_radius": BlastRadiusAttack(),
             "timeout": TimeoutResilienceAttack(),
             "trajectory_analysis": TrajectoryAttack(),
+            "cost_risk": CostRiskAttack(),
         }
         if contracts is not None:
             all_attacks["contract_violation"] = ContractViolationTest(contracts)

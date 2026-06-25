@@ -42,6 +42,7 @@ swarm-test run -a "Orchestrator,Worker1,Worker2" -e "Orchestrator>Worker1,Orches
 - A slow upstream with no timeout boundary blocking the whole pipeline — *timeout resilience*
 - Dense cliques, echo chambers, and cycles that bypass the orchestrator — *collusion detection*
 - Agents stuck in loops — runaway step counts and retry storms that burn tokens with no error thrown — *trajectory analysis*
+- Token-wasting structure — loops, retry-prone paths, and long chains that quietly burn your token budget — *cost risk analysis*
 - Output schema mismatches across agent edges — *contract violation* (opt-in; provide a contracts YAML)
 
 ## Features
@@ -111,6 +112,7 @@ swarm-test builds a NetworkX directed graph from your agent system — nodes are
 - **Collusion** — finds dense cliques, echo chambers, and cycles that bypass the declared orchestrator.
 - **Timeout resilience** — identifies long synchronous chains with no timeout boundary.
 - **Trajectory analysis** — flags self-loops, ping-pong pairs, multi-agent feedback cycles, unbounded loops with no exit, repeated parallel calls, and cycles deeper than `max_trajectory_depth` (default 5).
+- **Cost risk analysis** — relative 0–100 token-waste score from topology alone: unbounded loops (CRITICAL), feedback loops, fragile single-upstream retry-prone paths, long critical paths, and high fan-out nodes. Static estimate only — see the Cost Risk section below.
 - **Contract violation** — validates agent outputs against JSON schemas declared per edge (opt-in; pass `--contracts contracts.yml`).
 
 Roles are classified from structural metrics (in/out degree, betweenness centrality) plus naming hints, each with a 0–100% confidence score. Severity is then role-adjusted: an orchestrator with high blast radius is expected and gets downgraded; a validator leaking context is a security incident and gets upgraded.
@@ -140,6 +142,30 @@ swarm-test graph my_crew.py --format png --output topology.png   # needs the [pn
 ```
 
 Mermaid renders inline on GitHub, so you can drop the output straight into a README or PR description. Colors: red = SPOF, orange = moderate redundancy, green = fully redundant.
+
+</details>
+
+<details>
+<summary><b>Cost Risk</b></summary>
+
+`cost_risk` adds a second headline line under the Swarm Score whenever it finds topology patterns that tend to waste tokens:
+
+```
+Swarm Score: 32/100 — AT RISK (2 critical, 4 high findings)
+Cost Risk: 78/100 — HIGH (1 unbounded loop, 3 retry-prone paths)
+```
+
+The score is a **relative 0–100 structural estimate** with a verdict band (LOW / MODERATE / HIGH / SEVERE). Drivers are read from the graph alone:
+
+- **Unbounded loops** (cycles with no exit edge) — CRITICAL: an unbounded loop can re-invoke its agents indefinitely.
+- **Feedback loops with exit** — HIGH: per-cycle cost scales with cycle length.
+- **Retry-prone paths** (single-upstream agents with no fallback) — MEDIUM-HIGH: retries re-spend the upstream's tokens.
+- **Long critical paths** — MEDIUM: every request pays the full chain cost; a deep failure re-runs upstream work.
+- **High fan-out nodes** — MEDIUM: each invocation multiplies token spend across the fan-out.
+
+**Important:** this is a static estimate from topology only. It reports *which structures are most likely to waste tokens*, not *how many tokens you actually spent*. Real per-run cost measurement requires execution data — that's a separate, future capability and is intentionally out of scope here. No dollar amounts or currency are ever printed.
+
+Disable with `disabled_tests: [cost_risk]` in `.swarmtest.yml`.
 
 </details>
 

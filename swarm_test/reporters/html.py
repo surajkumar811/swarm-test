@@ -551,6 +551,11 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
     <div class="cert-badge" style="background: {{ level_color }}1f; color: {{ level_color }};">
       {{ certification_level }}
     </div>
+    {% if cost_risk %}
+    <div class="cost-risk-stat" style="margin-top: 0.55rem; color: {{ cost_risk.color }}; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.05em; text-align: center;">
+      Cost Risk: {{ cost_risk.score }}/100 — {{ cost_risk.verdict }}
+    </div>
+    {% endif %}
   </div>
 </header>
 
@@ -1332,6 +1337,22 @@ class HtmlReporter:
                     "regressed_count": len(comparison.get("regressed") or []),
                 }
 
+        # ---- Cost Risk stat (optional, shows only when cost_risk produced findings) ----
+        cost_risk_ctx: dict[str, Any] | None = None
+        cost_findings_count = sum(1 for f in report.all_findings if f.test_name == "cost_risk")
+        if report.cost_risk_score is not None and cost_findings_count:
+            verdict = report.cost_risk_verdict or "LOW"
+            cost_risk_ctx = {
+                "score": int(report.cost_risk_score),
+                "verdict": verdict,
+                "color": {
+                    "LOW": "#22c55e",
+                    "MODERATE": "#eab308",
+                    "HIGH": "#f97316",
+                    "SEVERE": "#ef4444",
+                }.get(verdict, "#94a3b8"),
+            }
+
         # ---- Render -------------------------------------------------
         level = report.certification_level
         level_color = _LEVEL_COLOR.get(level, "#94a3b8")
@@ -1363,6 +1384,7 @@ class HtmlReporter:
             js_payload=json.dumps(js_payload, default=str),
             version=version_str,
             trend=trend_ctx,
+            cost_risk=cost_risk_ctx,
             generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         )
 

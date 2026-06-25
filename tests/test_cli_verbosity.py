@@ -14,7 +14,11 @@ def _run(args: list[str]) -> tuple[int, str]:
 
 
 def test_quiet_mode_prints_only_headline() -> None:
-    """`scan --quiet` prints exactly the headline verdict line."""
+    """`scan --quiet` prints the headline verdict line(s) — no full report.
+
+    The headline is the Swarm Score line plus, optionally, a Cost Risk line
+    that only appears when the cost_risk attack produced findings.
+    """
     code, out = _run(
         [
             "scan",
@@ -28,8 +32,10 @@ def test_quiet_mode_prints_only_headline() -> None:
     assert code == 0
     # Strip blank lines for robustness
     non_blank = [line for line in out.splitlines() if line.strip()]
-    assert len(non_blank) == 1, f"expected single line, got: {non_blank!r}"
+    assert 1 <= len(non_blank) <= 2, f"expected 1-2 headline lines, got: {non_blank!r}"
     assert "Swarm Score:" in non_blank[0]
+    if len(non_blank) == 2:
+        assert "Cost Risk:" in non_blank[1]
     # Quiet mode must not print the report header
     assert "SWARM-TEST RELIABILITY REPORT" not in out
     assert "Test Results" not in out

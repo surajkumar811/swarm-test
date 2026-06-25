@@ -246,6 +246,35 @@ class SwarmReport(BaseModel):
             return "AT RISK"
         return "CRITICAL"
 
+    @property
+    def cost_risk_score(self) -> int | None:
+        """0-100 cost-waste risk score from the cost_risk attack, if it ran."""
+        for r in self.test_results:
+            if r.test_name == "cost_risk":
+                val = r.metrics.get("cost_risk_score")
+                if val is None:
+                    return None
+                return int(val)
+        return None
+
+    @property
+    def cost_risk_verdict(self) -> str | None:
+        """LOW / MODERATE / HIGH / SEVERE verdict from the cost_risk attack."""
+        for r in self.test_results:
+            if r.test_name == "cost_risk":
+                val = r.metrics.get("cost_risk_verdict")
+                return str(val) if val is not None else None
+        return None
+
+    @property
+    def cost_risk_drivers(self) -> list[str]:
+        """Human-readable list of dominant cost-risk drivers (empty if none)."""
+        for r in self.test_results:
+            if r.test_name == "cost_risk":
+                drivers = r.metrics.get("cost_risk_drivers") or []
+                return [str(d) for d in drivers]
+        return []
+
     def severity_counts(self) -> dict[str, int]:
         """Return a dict of severity → count across all findings."""
         counts: dict[str, int] = {s.value: 0 for s in Severity}
@@ -324,6 +353,7 @@ class SwarmReport(BaseModel):
             "timeout_resilience": "timeout",
             "blast_radius": "blast_radius",
             "trajectory_analysis": "trajectory",
+            "cost_risk": "cost_risk",
         }
 
         enriched_findings: list[dict[str, Any]] = []
@@ -482,6 +512,9 @@ class SwarmReport(BaseModel):
             "agent_count": self.agent_count,
             "edge_count": self.edge_count,
             "risk_score": self.risk_score,
+            "cost_risk_score": self.cost_risk_score,
+            "cost_risk_verdict": self.cost_risk_verdict,
+            "cost_risk_drivers": self.cost_risk_drivers,
             "total_findings": len(enriched_findings),
             "severity_summary": {
                 "critical": sum(1 for f in enriched_findings if f["severity"] == "critical"),
