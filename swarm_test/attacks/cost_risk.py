@@ -92,7 +92,7 @@ class CostRiskAttack(BaseAttack):
         name_of: dict[str, str] = {nid: g.nodes[nid].get("name", nid) for nid in g.nodes()}
 
         # Collapse to a simple DiGraph for analysis (preserves direction, no dupes).
-        simple = nx.DiGraph()
+        simple: nx.DiGraph = nx.DiGraph()
         simple.add_nodes_from(g.nodes())
         for u, v in g.edges():
             simple.add_edge(u, v)
@@ -406,7 +406,7 @@ class CostRiskAttack(BaseAttack):
             longest = []
             try:
                 lengths = dict(nx.all_pairs_shortest_path_length(simple))
-                best = (0, [])
+                best: tuple[int, list[str]] = (0, [])
                 for src, dsts in lengths.items():
                     for dst, length in dsts.items():
                         if length > best[0]:
