@@ -118,9 +118,7 @@ class CostRiskAttack(BaseAttack):
         # Only *declared* hubs suppress cycle / retry findings. Inferred-only
         # hubs are still subject to the full cost analysis since pure
         # structural inference isn't enough ground truth to silence findings.
-        hub_ids: set[str] = (
-            role_ctx.intentional_hubs if role_ctx is not None else set()
-        )
+        hub_ids: set[str] = role_ctx.intentional_hubs if role_ctx is not None else set()
 
         # 1) Self-loops and cycles (unbounded vs feedback).
         self_loop_findings, self_loop_score = self._scan_self_loops(g, name_of)
@@ -156,9 +154,7 @@ class CostRiskAttack(BaseAttack):
             drivers.append(f"critical path {longest_path_len} hops")
 
         # 4) High fan-out nodes.
-        fanout_findings, fanout_score = self._scan_high_fanout(
-            simple, name_of, hub_ids=hub_ids
-        )
+        fanout_findings, fanout_score = self._scan_high_fanout(simple, name_of, hub_ids=hub_ids)
         findings.extend(fanout_findings)
         score += fanout_score
         if fanout_findings:
@@ -445,14 +441,12 @@ class CostRiskAttack(BaseAttack):
         # Emit one collapsed finding per SCC that owns >= 2 fragile edges.
         # SCCs with a single edge fall back to the per-edge path (it's not
         # a cycle in any meaningful sense).
-        for scc, group in scc_groups.items():
+        for cycle_scc, group in scc_groups.items():
             if len(group) < 2:
                 non_cycle.extend(group)
                 continue
-            member_names = sorted(name_of.get(nid, nid) for nid in scc)
-            edge_strs = sorted(
-                f"{name_of.get(u, u)}→{name_of.get(d, d)}" for d, u in group
-            )
+            member_names = sorted(name_of.get(nid, nid) for nid in cycle_scc)
+            edge_strs = sorted(f"{name_of.get(u, u)}→{name_of.get(d, d)}" for d, u in group)
             sample = ", ".join(edge_strs[:5])
             if len(edge_strs) > 5:
                 sample += f", … (+{len(edge_strs) - 5} more)"

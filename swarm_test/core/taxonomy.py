@@ -105,9 +105,7 @@ _WORKER_HINTS = ("worker", "task", "executor", "runner", "processor")
 _ROUTER_HINTS = ("router", "switch", "broker", "relay")
 
 
-def _declared_intentional_role(
-    agent_id: str, agents: dict[str, Any], graph: Any
-) -> str | None:
+def _declared_intentional_role(agent_id: str, agents: dict[str, Any], graph: Any) -> str | None:
     """Return the user-declared intentional role for an agent, if any.
 
     Looks at the AgentNode's ``intentional_role`` field first; falls back to
@@ -178,10 +176,7 @@ class RoleContext:
         self._inferred_hubs: set[str] = {
             aid
             for aid, (role, conf) in self.role_map.items()
-            if (
-                is_hub_role(role)
-                and HUB_CONFIDENCE_THRESHOLD <= conf < 0.999
-            )
+            if (is_hub_role(role) and HUB_CONFIDENCE_THRESHOLD <= conf < 0.999)
         }
 
     def role_of(self, agent_id: str) -> str:

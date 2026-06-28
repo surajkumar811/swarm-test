@@ -144,8 +144,8 @@ class IntentDriftAttack(BaseAttack):
         # Runs before unusual-delegation so we can suppress duplicates.
         write_back_findings = self._check_privilege_writeback(graph)
         findings.extend(write_back_findings)
-        writeback_edges = {
-            tuple(f.affected_agents[:2])
+        writeback_edges: set[tuple[str, str]] = {
+            (f.affected_agents[0], f.affected_agents[1])
             for f in write_back_findings
             if len(f.affected_agents) >= 2
         }
@@ -224,9 +224,7 @@ class IntentDriftAttack(BaseAttack):
         role_ctx = getattr(graph, "role_context", None)
         # Return-path suppression only applies to *declared* hubs — inferred
         # orchestrators don't get to silence privilege-escalation signals.
-        hub_ids: set[str] = (
-            role_ctx.intentional_hubs if role_ctx is not None else set()
-        )
+        hub_ids: set[str] = role_ctx.intentional_hubs if role_ctx is not None else set()
         suppressed_edges = suppressed_edges or set()
 
         # Event types that represent a return / handoff to the hub. When the
@@ -319,8 +317,10 @@ class IntentDriftAttack(BaseAttack):
             dst = event.target_agent_id
             if dst not in hub_ids or src in hub_ids:
                 continue
-            etype = event.event_type.value if hasattr(event.event_type, "value") else str(
-                event.event_type
+            etype = (
+                event.event_type.value
+                if hasattr(event.event_type, "value")
+                else str(event.event_type)
             )
             if etype.lower() not in write_event_types:
                 continue

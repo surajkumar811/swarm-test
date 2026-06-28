@@ -83,9 +83,7 @@ class BlastRadiusAttack(BaseAttack):
             spof_role = role_ctx.role_of(spof_id) if role_ctx is not None else ""
             adjusted_str = role_adjusted_severity(spof_role, "blast_radius", "critical")
             adjusted_sev = _SEVERITY_FROM_STR.get(adjusted_str, Severity.CRITICAL)
-            is_intentional_hub = bool(
-                role_ctx is not None and role_ctx.is_intentional_hub(spof_id)
-            )
+            is_intentional_hub = bool(role_ctx is not None and role_ctx.is_intentional_hub(spof_id))
 
             if is_intentional_hub:
                 title = f"Intentional hub is a Single Point of Failure: {spof_name}"

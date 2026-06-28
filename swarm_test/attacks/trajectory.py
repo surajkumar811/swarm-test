@@ -67,9 +67,7 @@ class TrajectoryAttack(BaseAttack):
         # Only *declared* hubs trigger cycle/duplicate-edge suppression.
         # Inferred-only hubs leave cycles intact so structural inference
         # alone cannot silence real loop signals.
-        hub_ids: set[str] = (
-            role_ctx.intentional_hubs if role_ctx is not None else set()
-        )
+        hub_ids: set[str] = role_ctx.intentional_hubs if role_ctx is not None else set()
 
         self_loop_findings, self_loop_ids = self._scan_self_loops(g, name_of)
         findings.extend(self_loop_findings)
@@ -79,9 +77,7 @@ class TrajectoryAttack(BaseAttack):
         )
         findings.extend(cycle_findings)
 
-        dup_findings, dup_pair_count = self._scan_duplicate_edges(
-            g, name_of, hub_ids=hub_ids
-        )
+        dup_findings, dup_pair_count = self._scan_duplicate_edges(g, name_of, hub_ids=hub_ids)
         findings.extend(dup_findings)
 
         metrics = {
@@ -144,7 +140,7 @@ class TrajectoryAttack(BaseAttack):
         hub_ids: set[str] | None = None,
     ) -> tuple[list[Finding], int]:
         # Collapse to a simple DiGraph and drop self-loops (already reported).
-        simple = nx.DiGraph()
+        simple: nx.DiGraph = nx.DiGraph()
         simple.add_nodes_from(g.nodes())
         for u, v in g.edges():
             if u != v:
@@ -219,8 +215,7 @@ class TrajectoryAttack(BaseAttack):
                     f"back and forth. An exit edge exists, but a small prompt change "
                     f"can keep them bouncing for many turns before exiting."
                     + (
-                        " The cost and collusion attacks also report this cycle — "
-                        "start there."
+                        " The cost and collusion attacks also report this cycle — " "start there."
                         if graph_has_hub
                         else ""
                     )

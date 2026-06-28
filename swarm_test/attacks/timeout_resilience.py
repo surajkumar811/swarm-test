@@ -79,9 +79,7 @@ class TimeoutResilienceAttack(BaseAttack):
         # Fragile-spoke collapsing only applies to *declared* hubs. An
         # inferred-orchestrator's spokes are still flagged individually since
         # the user hasn't told us the dependency is intentional.
-        hub_ids: set[str] = (
-            role_ctx.intentional_hubs if role_ctx is not None else set()
-        )
+        hub_ids: set[str] = role_ctx.intentional_hubs if role_ctx is not None else set()
 
         # -- Check 1: edges with no duration_ms (no time-bounding) -----------
         untimed_edges = []
@@ -183,9 +181,7 @@ class TimeoutResilienceAttack(BaseAttack):
                 if out_degree > 0:
                     metrics["agents_without_graceful_degradation"] += 1
                     no_timeout_agent_ids.append(node_id)
-                    no_timeout_agent_names.append(
-                        graph.graph.nodes[node_id].get("name", node_id)
-                    )
+                    no_timeout_agent_names.append(graph.graph.nodes[node_id].get("name", node_id))
 
         # Collapse: when more than 3 agents share the "no timeout handling"
         # condition, the gap is systemic (the framework lacks timeout
@@ -201,9 +197,7 @@ class TimeoutResilienceAttack(BaseAttack):
                     Finding(
                         test_name=self.name,
                         severity=Severity.MEDIUM,
-                        title=(
-                            f"No timeout handling across {len(no_timeout_agent_ids)} agents"
-                        ),
+                        title=(f"No timeout handling across {len(no_timeout_agent_ids)} agents"),
                         description=(
                             f"{len(no_timeout_agent_ids)} agents ({sample}) have no "
                             f"TIMEOUT/ERROR events recorded. When this many agents lack "
@@ -259,11 +253,7 @@ class TimeoutResilienceAttack(BaseAttack):
         # cycle predecessor); collapse those into one cycle-cluster finding so
         # an N-node cycle doesn't emit N near-identical "fragile" rows.
         try:
-            sccs = [
-                scc
-                for scc in nx.strongly_connected_components(graph.graph)
-                if len(scc) >= 2
-            ]
+            sccs = [scc for scc in nx.strongly_connected_components(graph.graph) if len(scc) >= 2]
         except Exception:
             sccs = []
         scc_membership: dict[str, frozenset[str]] = {}
@@ -318,7 +308,7 @@ class TimeoutResilienceAttack(BaseAttack):
 
         # One collapsed finding per cycle SCC with >=2 fragile edges. Single-edge
         # SCCs (shouldn't really happen) re-emit individually.
-        for scc, group in cycle_fragile.items():
+        for cycle_scc, group in cycle_fragile.items():
             if len(group) < 2:
                 for node_id, agent_name, upstream_id, upstream_name in group:
                     findings.append(
@@ -340,20 +330,18 @@ class TimeoutResilienceAttack(BaseAttack):
                         )
                     )
                 continue
-            member_names = sorted(
-                graph.graph.nodes[nid].get("name", nid) for nid in scc
-            )
+            member_names = sorted(graph.graph.nodes[nid].get("name", nid) for nid in cycle_scc)
             edge_strs = sorted(f"{up}→{dn}" for _, dn, _, up in group)
             sample = ", ".join(edge_strs[:5])
             if len(edge_strs) > 5:
                 sample += f", … (+{len(edge_strs) - 5} more)"
-            affected: list[str] = []
+            cycle_affected: list[str] = []
             seen_aff: set[str] = set()
             for node_id, _, upstream_id, _ in group:
                 for aid in (upstream_id, node_id):
                     if aid not in seen_aff:
                         seen_aff.add(aid)
-                        affected.append(aid)
+                        cycle_affected.append(aid)
             findings.append(
                 Finding(
                     test_name=self.name,
@@ -370,7 +358,7 @@ class TimeoutResilienceAttack(BaseAttack):
                         f"same root cause: the cycle. One slow member stalls all "
                         f"the others."
                     ),
-                    affected_agents=affected,
+                    affected_agents=cycle_affected,
                     evidence={
                         "cycle_members": member_names,
                         "fragile_edges": edge_strs,

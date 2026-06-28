@@ -55,9 +55,7 @@ class CollusionDetectionAttack(BaseAttack):
         role_ctx = getattr(graph, "role_context", None)
         # Clique suppression keys off *declared* hubs only — pure inference
         # isn't enough to silence a collusion signal.
-        hub_ids: set[str] = (
-            role_ctx.intentional_hubs if role_ctx is not None else set()
-        )
+        hub_ids: set[str] = role_ctx.intentional_hubs if role_ctx is not None else set()
 
         # 1. Dense clique detection on undirected projection
         undirected = g.to_undirected(as_view=True)

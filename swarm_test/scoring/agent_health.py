@@ -101,12 +101,8 @@ class AgentHealthScorer:
         clique_membership = self._clique_membership(cliques)
 
         role_ctx = getattr(graph, "role_context", None)
-        intentional_hubs: set[str] = (
-            role_ctx.intentional_hubs if role_ctx is not None else set()
-        )
-        inferred_hubs: set[str] = (
-            role_ctx.inferred_hubs if role_ctx is not None else set()
-        )
+        intentional_hubs: set[str] = role_ctx.intentional_hubs if role_ctx is not None else set()
+        inferred_hubs: set[str] = role_ctx.inferred_hubs if role_ctx is not None else set()
         hubs: set[str] = intentional_hubs | inferred_hubs
 
         scores: dict[str, AgentHealthScore] = {}
@@ -121,9 +117,7 @@ class AgentHealthScorer:
 
             # The role the *severity adjustment layer* sees — falls back to
             # UNKNOWN when role classification didn't run (legacy callers).
-            sev_role = (
-                role_ctx.role_of(agent_id) if role_ctx is not None else AgentRole.UNKNOWN
-            )
+            sev_role = role_ctx.role_of(agent_id) if role_ctx is not None else AgentRole.UNKNOWN
 
             # Centrality multiplier mirrors the cascade attack's behaviour:
             #   intentional hub → 0   (suppressed, by-design centrality)

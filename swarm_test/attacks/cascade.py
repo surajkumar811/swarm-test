@@ -80,12 +80,8 @@ class CascadeFailureAttack(BaseAttack):
         #   only declared hubs — so use the union for the reachability
         #   trimming, but keep severity downgrade (not suppression) for the
         #   inferred case via role_adjusted_severity.
-        intentional_hubs: set[str] = (
-            role_ctx.intentional_hubs if role_ctx is not None else set()
-        )
-        effective_hubs: set[str] = (
-            role_ctx.hubs if role_ctx is not None else set()
-        )
+        intentional_hubs: set[str] = role_ctx.intentional_hubs if role_ctx is not None else set()
+        effective_hubs: set[str] = role_ctx.hubs if role_ctx is not None else set()
 
         worst_impact = 0.0
         worst_agent = None
@@ -131,9 +127,7 @@ class CascadeFailureAttack(BaseAttack):
                     continue
                 # Role-adjusted severity. role_adjusted_severity downgrades
                 # blast_radius/cascade findings on hub-roles by one level.
-                adjusted_str = role_adjusted_severity(
-                    agent_role, "cascade_failure", severity.value
-                )
+                adjusted_str = role_adjusted_severity(agent_role, "cascade_failure", severity.value)
                 adjusted = _SEVERITY_FROM_STR.get(adjusted_str, severity)
 
                 # For *declared* intentional hubs the centrality is
@@ -214,9 +208,7 @@ class CascadeFailureAttack(BaseAttack):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _collapse_per_agent_findings(
-        self, per_agent: list[Finding]
-    ) -> list[Finding]:
+    def _collapse_per_agent_findings(self, per_agent: list[Finding]) -> list[Finding]:
         """Collapse multiple per-agent findings that describe the same
         architectural fact into a single multi-agent finding.
 
@@ -319,11 +311,7 @@ class CascadeFailureAttack(BaseAttack):
         if spoke_count == 0:
             return None
 
-        hub_names = sorted(
-            graph.graph.nodes[h].get("name", h)
-            for h in hub_ids
-            if h in graph.graph
-        )
+        hub_names = sorted(graph.graph.nodes[h].get("name", h) for h in hub_ids if h in graph.graph)
         spoke_names = sorted(
             graph.graph.nodes[s].get("name", s)
             for s in suppressed_ids
@@ -354,9 +342,7 @@ class CascadeFailureAttack(BaseAttack):
                 "raw_max_impact_percentage": worst_impact,
                 "suppressed_by_severity": {
                     sev: sorted(
-                        graph.graph.nodes[aid].get("name", aid)
-                        for aid in ids
-                        if aid in graph.graph
+                        graph.graph.nodes[aid].get("name", aid) for aid in ids if aid in graph.graph
                     )
                     for sev, ids in suppressed_by_hub.items()
                 },
