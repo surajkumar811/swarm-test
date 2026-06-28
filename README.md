@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: surajkumar811/swarm-test@v0.3.0
+      - uses: surajkumar811/swarm-test@v0.3.10
         with:
           script: my_crew.py
           fail-on-severity: high
@@ -100,8 +100,7 @@ pip install "swarm-test[png]"        # for PNG graph export
 
 ---
 
-<details>
-<summary><b>How it works</b></summary>
+## How it works
 
 swarm-test builds a NetworkX directed graph from your agent system — nodes are agents, edges are interactions extracted by each framework adapter. All tests are static graph analyses; no LLM calls are made, and results are deterministic given the same topology.
 
@@ -117,10 +116,7 @@ swarm-test builds a NetworkX directed graph from your agent system — nodes are
 
 Roles are classified from structural metrics (in/out degree, betweenness centrality) plus naming hints, each with a 0–100% confidence score. Severity is then role-adjusted: an orchestrator with high blast radius is expected and gets downgraded; a validator leaking context is a security incident and gets upgraded.
 
-</details>
-
-<details>
-<summary><b>Output modes &amp; formats</b></summary>
+## Output modes & formats
 
 | Flag | Output |
 |---|---|
@@ -130,10 +126,7 @@ Roles are classified from structural metrics (in/out degree, betweenness central
 
 Output formats via `--output-format`: `console`, `json`, `markdown`, `html`. The same verbosity setting is configurable in `.swarmtest.yml`.
 
-</details>
-
-<details>
-<summary><b>Graph export</b></summary>
+## Graph export
 
 ```bash
 swarm-test graph my_crew.py --format mermaid
@@ -143,10 +136,7 @@ swarm-test graph my_crew.py --format png --output topology.png   # needs the [pn
 
 Mermaid renders inline on GitHub, so you can drop the output straight into a README or PR description. Colors: red = SPOF, orange = moderate redundancy, green = fully redundant.
 
-</details>
-
-<details>
-<summary><b>Cost Risk</b></summary>
+## Cost Risk
 
 `cost_risk` adds a second headline line under the Swarm Score whenever it finds topology patterns that tend to waste tokens:
 
@@ -167,10 +157,7 @@ The score is a **relative 0–100 structural estimate** with a verdict band (LOW
 
 Disable with `disabled_tests: [cost_risk]` in `.swarmtest.yml`.
 
-</details>
-
-<details>
-<summary><b>Historical tracking</b></summary>
+## Historical tracking
 
 Every run writes a small JSON snapshot to `.swarmtest-history/`. Subsequent runs print a trend line below the headline verdict:
 
@@ -184,10 +171,7 @@ Recent: 54 → 61 → 58 → 72
 
 Browse with `swarm-test history show`. Disable per-run with `--no-history`, or globally via `history_enabled: false` in `.swarmtest.yml`. `.swarmtest-history/` is gitignored by default; commit it if you want the trend to survive across CI machines.
 
-</details>
-
-<details>
-<summary><b>Configuration (.swarmtest.yml)</b></summary>
+## Configuration (.swarmtest.yml)
 
 ```yaml
 fail_on_severity: high        # critical | high | medium | low | info | none
@@ -204,10 +188,7 @@ strict: false                 # treat ANY finding as a failure
 
 Auto-discovers `.swarmtest.yml`, `.swarmtest.yaml`, `swarmtest.yml`, or a `[tool.swarmtest]` table in `pyproject.toml`. CLI flags always override config-file values. Exit codes from `run`: `0` (passed), `1` (findings exceed thresholds), `2` (config or runtime error).
 
-</details>
-
-<details>
-<summary><b>Plugin system</b></summary>
+## Plugin system
 
 Ship custom tests as installable Python packages. Register under the `swarm_test.plugins` entry-point group; swarm-test auto-discovers and runs them alongside the built-in tests:
 
@@ -222,10 +203,7 @@ swarm-test plugins list
 
 See [`examples/plugin_template/`](examples/plugin_template/) for a runnable starter.
 
-</details>
-
-<details>
-<summary><b>Framework examples (CrewAI, LangGraph, AutoGen, static)</b></summary>
+## Framework examples (CrewAI, LangGraph, AutoGen, static)
 
 ```python
 # CrewAI
@@ -253,8 +231,6 @@ SwarmProbe(
     events=[InteractionEvent(source_agent_id=a.id, target_agent_id=b.id, event_type=EventType.TASK_DELEGATE)],
 ).run_all().print_summary()
 ```
-
-</details>
 
 ---
 
