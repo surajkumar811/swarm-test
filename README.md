@@ -26,7 +26,7 @@ swarm-test run my_crew.py --open
 No real script handy? Build a synthetic topology straight from the CLI:
 
 ```bash
-swarm-test run -a "Orchestrator,Worker1,Worker2" -e "Orchestrator>Worker1,Orchestrator>Worker2"
+swarm-test scan -a "Orchestrator,Worker1,Worker2" -e "Orchestrator>Worker1,Orchestrator>Worker2"
 ```
 
 ![swarm-test reliability dashboard](docs/images/dashboard.png)

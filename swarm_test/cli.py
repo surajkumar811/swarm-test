@@ -588,8 +588,13 @@ def run_cmd(
     \b
     Examples:
       swarm-test run --config .swarmtest.yml
-      swarm-test run -a "A,B,C" -e "A>B,B>C"
       swarm-test run my_crew.py --config custom.yml --strict
+
+    For an inline topology without a script or YAML, use the dedicated
+    quick-scan subcommand instead:
+
+    \b
+      swarm-test scan -a "A,B,C" -e "A>B,B>C"
     """
     from swarm_test.config import find_config_path, load_config, merge_cli_args
 
