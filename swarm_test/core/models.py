@@ -70,6 +70,11 @@ class AgentNode(BaseModel):
     is_active: bool = True
     classified_role: str = "UNKNOWN"
     role_confidence: float = 0.0
+    # User-declared intentional role — bypasses structural inference. Set to
+    # "ORCHESTRATOR" to mark an agent as the intentional central hub so the
+    # attacks treat its high blast radius / centrality as by-design instead of
+    # firing CRITICAL findings on every spoke.
+    intentional_role: str | None = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -215,22 +220,48 @@ class SwarmReport(BaseModel):
             Severity.HIGH: 8.0,
             Severity.MEDIUM: 3.0,
             Severity.LOW: 1.0,
-            Severity.INFO: 0.5,
+            # INFO findings are documentation of intentional design decisions
+            # (e.g. "this is the recognised hub") — they belong in the report
+            # for context, not as a score penalty.
+            Severity.INFO: 0.1,
         }
         findings_penalty = sum(penalty_weights.get(f.severity, 0.0) for f in self.all_findings)
 
         # Topology penalty: low average redundancy → up to -25 pts. A 2-hub
         # redundant topology (high redundancy) keeps this term near 0, while
         # a hub-spoke with 5 workers (low redundancy / SPOFs) loses points.
+        # When the user has declared an intentional hub (confidence == 1.0
+        # on a hub role), we halve the topology penalty: hub-and-spoke has
+        # inherently low redundancy and penalising the user for the design
+        # they explicitly chose is double-counting their own decision.
         topology_penalty = 0.0
         if self.redundancy_scores:
             avg_redundancy = sum(float(r) for r in self.redundancy_scores.values()) / len(
                 self.redundancy_scores
             )
             topology_penalty = max(0.0, 100.0 - avg_redundancy) * 0.25
+            if self._has_declared_intentional_hub():
+                topology_penalty *= 0.5
 
         score = 100.0 - findings_penalty - topology_penalty
         return int(round(max(0.0, min(100.0, score))))
+
+    def _has_declared_intentional_hub(self) -> bool:
+        """True when at least one agent has a user-declared intentional hub role.
+
+        Declared roles come back from ``classify_agent`` with confidence
+        exactly 1.0 and a hub role (ORCHESTRATOR or AGGREGATOR). We treat
+        this as the user accepting hub-and-spoke as their design.
+        """
+        hub_roles = {"ORCHESTRATOR", "AGGREGATOR"}
+        for info in self.agent_roles.values():
+            try:
+                conf = float(info.get("confidence", 0.0))
+            except (TypeError, ValueError):
+                continue
+            if conf >= 0.999 and info.get("role") in hub_roles:
+                return True
+        return False
 
     @property
     def certification_level(self) -> str:

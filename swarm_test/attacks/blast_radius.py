@@ -9,8 +9,11 @@ import networkx as nx
 
 from swarm_test.attacks.base import BaseAttack
 from swarm_test.core.models import Finding, Severity, TestResult, TestStatus
+from swarm_test.core.taxonomy import role_adjusted_severity
 
 logger = logging.getLogger(__name__)
+
+_SEVERITY_FROM_STR = {s.value: s for s in Severity}
 
 
 class BlastRadiusAttack(BaseAttack):
@@ -65,32 +68,70 @@ class BlastRadiusAttack(BaseAttack):
         # 1. Single Points of Failure (articulation points)
         spofs = graph.find_single_points_of_failure()
         metrics["single_points_of_failure"] = [g.nodes[s].get("name", s) for s in spofs if s in g]
+        role_ctx = getattr(graph, "role_context", None)
 
         for spof_id in spofs:
             if spof_id not in g:
                 continue
             spof_name = g.nodes[spof_id].get("name", spof_id)
             blast = graph.get_blast_radius(spof_id)
+
+            # Apply role-adjusted severity. Declared intentional hubs are
+            # downgraded to INFO (the user accepted the design). Inferred
+            # high-confidence orchestrators get the one-notch-down treatment
+            # from ``role_adjusted_severity`` (CRITICAL → HIGH).
+            spof_role = role_ctx.role_of(spof_id) if role_ctx is not None else ""
+            adjusted_str = role_adjusted_severity(spof_role, "blast_radius", "critical")
+            adjusted_sev = _SEVERITY_FROM_STR.get(adjusted_str, Severity.CRITICAL)
+            is_intentional_hub = bool(
+                role_ctx is not None and role_ctx.is_intentional_hub(spof_id)
+            )
+
+            if is_intentional_hub:
+                title = f"Intentional hub is a Single Point of Failure: {spof_name}"
+                description = (
+                    f"Agent '{spof_name}' is an articulation point — removing it "
+                    f"would disconnect the agent communication graph. "
+                    f"Blast radius: {blast['impact_percentage']:.1f}% of agents affected. "
+                    f"This is the recognised intentional hub; the SPOF status is "
+                    f"by design but the loss-of-{spof_name} failure mode remains real."
+                )
+                # Intentional-hub SPOF is informational — the user already
+                # declared this hub, so we surface it without penalising the
+                # swarm score for an architectural choice they accepted.
+                final_severity = Severity.INFO
+            else:
+                title = f"Single Point of Failure: {spof_name}"
+                description = (
+                    f"Agent '{spof_name}' is an articulation point — removing it "
+                    f"would disconnect the agent communication graph. "
+                    f"Blast radius: {blast['impact_percentage']:.1f}% of agents affected."
+                )
+                final_severity = adjusted_sev
+
             findings.append(
                 Finding(
                     test_name=self.name,
-                    severity=Severity.CRITICAL,
-                    title=f"Single Point of Failure: {spof_name}",
-                    description=(
-                        f"Agent '{spof_name}' is an articulation point — removing it "
-                        f"would disconnect the agent communication graph. "
-                        f"Blast radius: {blast['impact_percentage']:.1f}% of agents affected."
-                    ),
+                    severity=final_severity,
+                    title=title,
+                    description=description,
                     affected_agents=[spof_id] + blast["downstream_agents"],
                     evidence={
                         "agent_id": spof_id,
                         "impact_percentage": blast["impact_percentage"],
                         "downstream_count": len(blast["downstream_agents"]),
+                        "is_intentional_hub": is_intentional_hub,
+                        "role": spof_role,
                     },
                     remediation=(
-                        f"Reduce '{spof_name}' connections by introducing intermediate "
-                        f"routing agents, or replicate '{spof_name}' so traffic can "
-                        f"fail over to a peer."
+                        f"Add a hot standby for '{spof_name}' or partition its "
+                        f"workload across two replicas so traffic can fail over."
+                        if is_intentional_hub
+                        else (
+                            f"Reduce '{spof_name}' connections by introducing intermediate "
+                            f"routing agents, or replicate '{spof_name}' so traffic can "
+                            f"fail over to a peer."
+                        )
                     ),
                 )
             )

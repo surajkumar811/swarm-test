@@ -63,13 +63,25 @@ class TrajectoryAttack(BaseAttack):
 
         name_of: dict[str, str] = {nid: g.nodes[nid].get("name", nid) for nid in g.nodes()}
 
+        role_ctx = getattr(graph, "role_context", None)
+        # Only *declared* hubs trigger cycle/duplicate-edge suppression.
+        # Inferred-only hubs leave cycles intact so structural inference
+        # alone cannot silence real loop signals.
+        hub_ids: set[str] = (
+            role_ctx.intentional_hubs if role_ctx is not None else set()
+        )
+
         self_loop_findings, self_loop_ids = self._scan_self_loops(g, name_of)
         findings.extend(self_loop_findings)
 
-        cycle_findings, seen_cycle_count = self._scan_cycles(g, name_of, self_loop_ids)
+        cycle_findings, seen_cycle_count = self._scan_cycles(
+            g, name_of, self_loop_ids, hub_ids=hub_ids
+        )
         findings.extend(cycle_findings)
 
-        dup_findings, dup_pair_count = self._scan_duplicate_edges(g, name_of)
+        dup_findings, dup_pair_count = self._scan_duplicate_edges(
+            g, name_of, hub_ids=hub_ids
+        )
         findings.extend(dup_findings)
 
         metrics = {
@@ -129,6 +141,7 @@ class TrajectoryAttack(BaseAttack):
         g: nx.MultiDiGraph,
         name_of: dict[str, str],
         self_loop_ids: set[str],
+        hub_ids: set[str] | None = None,
     ) -> tuple[list[Finding], int]:
         # Collapse to a simple DiGraph and drop self-loops (already reported).
         simple = nx.DiGraph()
@@ -143,6 +156,7 @@ class TrajectoryAttack(BaseAttack):
             logger.debug("simple_cycles raised: %s", exc)
             raw_cycles = []
 
+        hub_ids = hub_ids or set()
         findings: list[Finding] = []
         # Dedupe cycles by frozenset of member NAMES so cycle orientation /
         # starting node doesn't produce duplicate findings.
@@ -157,6 +171,13 @@ class TrajectoryAttack(BaseAttack):
             has_exit = any(
                 succ not in cycle_set for nid in cycle for succ in simple.successors(nid)
             )
+
+            # A bounded cycle that passes through the intentional hub is a
+            # normal request/response chain — the hub's flow control bounds
+            # it. Suppress these. Unbounded cycles (no exit edge) are still
+            # flagged even when they include the hub.
+            if has_exit and (cycle_set & hub_ids):
+                continue
 
             sorted_names = sorted(name_of.get(nid, nid) for nid in cycle)
             primary_name = sorted_names[0]
@@ -185,11 +206,24 @@ class TrajectoryAttack(BaseAttack):
                 )
             elif length == 2:
                 title = f"Ping-pong risk between {sorted_names[0]} and {sorted_names[1]}"
-                severity = Severity.MEDIUM
+                # When the graph has an intentional hub, this 2-node bypass
+                # cycle is also reported by collusion (orchestrator-bypass)
+                # and by cost_risk (feedback loop). Demote to INFO so the
+                # report doesn't triple-count the same fact. When there's no
+                # hub at all the user has nothing else flagging this cycle,
+                # so keep it as MEDIUM.
+                graph_has_hub = bool(hub_ids)
+                severity = Severity.INFO if graph_has_hub else Severity.MEDIUM
                 description = (
                     f"Agents '{sorted_names[0]}' and '{sorted_names[1]}' send work "
                     f"back and forth. An exit edge exists, but a small prompt change "
                     f"can keep them bouncing for many turns before exiting."
+                    + (
+                        " The cost and collusion attacks also report this cycle — "
+                        "start there."
+                        if graph_has_hub
+                        else ""
+                    )
                 )
                 remediation = (
                     f"Add a turn counter or explicit handoff condition on the "
@@ -275,11 +309,19 @@ class TrajectoryAttack(BaseAttack):
         self,
         g: nx.MultiDiGraph,
         name_of: dict[str, str],
+        hub_ids: set[str] | None = None,
     ) -> tuple[list[Finding], int]:
+        hub_ids = hub_ids or set()
         pair_counts: dict[tuple[str, str], int] = {}
         for u, v in g.edges():
             if u == v:
                 continue  # self-loops handled separately
+            # Duplicate edges between a worker and the intentional hub are
+            # part of the normal request/response loop — the spoke might
+            # call the hub several times for distinct subtasks. Skip pairs
+            # where the hub is on either end.
+            if u in hub_ids or v in hub_ids:
+                continue
             pair_counts[(u, v)] = pair_counts.get((u, v), 0) + 1
 
         ordered_pairs = sorted(

@@ -52,12 +52,25 @@ class CollusionDetectionAttack(BaseAttack):
                 metrics={"note": "Need ≥3 agents for collusion analysis"},
             )
 
+        role_ctx = getattr(graph, "role_context", None)
+        # Clique suppression keys off *declared* hubs only — pure inference
+        # isn't enough to silence a collusion signal.
+        hub_ids: set[str] = (
+            role_ctx.intentional_hubs if role_ctx is not None else set()
+        )
+
         # 1. Dense clique detection on undirected projection
         undirected = g.to_undirected(as_view=True)
         cliques = [c for c in nx.find_cliques(undirected) if len(c) >= self.MIN_CLIQUE_SIZE]
         metrics["cliques_found"] = len(cliques)
 
         for clique in cliques:
+            # A clique that includes the intentional hub is just the
+            # bidirectional request/response pattern around the hub —
+            # the hub talks to its spokes, the spokes talk back. That's
+            # the design, not coordinated misbehaviour.
+            if any(nid in hub_ids for nid in clique):
+                continue
             agent_names = [g.nodes[n].get("name", n) for n in clique]
             findings.append(
                 Finding(
@@ -153,7 +166,12 @@ class CollusionDetectionAttack(BaseAttack):
 
     @staticmethod
     def _detect_collusion_cycles(graph: Any) -> list[Finding]:
-        """Flag cycles that bypass any orchestrator/manager node."""
+        """Flag cycles that bypass any orchestrator/manager node.
+
+        Uses the explicit role context (declared / inferred intentional hubs)
+        in addition to the original lexical role-name matching so users can
+        declare a hub via ``intentional_role`` without renaming their agent.
+        """
         findings = []
         g = graph.graph
 
@@ -163,6 +181,13 @@ class CollusionDetectionAttack(BaseAttack):
             role = g.nodes[node].get("role", "").lower()
             if any(r in role for r in ("manager", "orchestrator", "coordinator", "planner")):
                 orchestrators.add(node)
+
+        # Augment with declared / inferred hubs from the role context — these
+        # are the canonical "this is the orchestrator" signal for deciding
+        # whether a cycle bypasses oversight.
+        role_ctx = getattr(graph, "role_context", None)
+        if role_ctx is not None:
+            orchestrators |= role_ctx.hubs
 
         if not orchestrators:
             return []  # Can't determine bypass without known orchestrators

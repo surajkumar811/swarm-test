@@ -19,6 +19,9 @@ class SwarmGraph:
         self._graph: nx.MultiDiGraph = nx.MultiDiGraph()
         self._agents: dict[str, AgentNode] = {}
         self._events: list[InteractionEvent] = []
+        # Lazily populated role classification, shared across attacks within
+        # a single probe run. The probe attaches this before running attacks.
+        self._role_context: Any | None = None
 
     # ------------------------------------------------------------------
     # Graph construction
@@ -33,6 +36,7 @@ class SwarmGraph:
             role=agent.role,
             framework=agent.framework,
             metadata=agent.metadata,
+            intentional_role=agent.intentional_role,
         )
         logger.debug("Added agent node: %s (%s)", agent.name, agent.id)
 
@@ -97,6 +101,66 @@ class SwarmGraph:
             "agent_name": agent_name,
             "downstream_agents": downstream,
             "affected_edge_count": len(affected_edges),
+            "total_agents": total_agents,
+            "impact_percentage": round(impact_pct, 2),
+        }
+
+    def get_effective_blast_radius(
+        self, agent_id: str, hub_ids: set[str] | None = None
+    ) -> dict[str, Any]:
+        """Blast radius that excludes descendants reachable *only* through a hub.
+
+        In a hub-and-spoke topology a pure leaf returns to the orchestrator,
+        which then fans work out to other leaves. ``get_blast_radius`` counts
+        every other leaf as a descendant because they are graph-reachable, but
+        no real downstream depends on this leaf's *output* — the dependency
+        runs through the hub. This method removes hub nodes (other than the
+        agent itself) from the working graph and only counts descendants the
+        agent can reach without going through any hub. The result reflects
+        actual downstream impact rather than topological reachability.
+
+        ``hub_ids`` is the set of intentional / inferred hubs to exclude. If
+        omitted the method falls back to ``role_context.hubs`` when present,
+        otherwise to ``get_blast_radius`` so callers without role context get
+        identical numbers to the old method.
+        """
+        if hub_ids is None and self._role_context is not None:
+            hub_ids = self._role_context.hubs
+        if not hub_ids or agent_id in hub_ids:
+            # No hub context, or the agent IS the hub — fall back to the
+            # raw reachability number. The hub's actual blast radius is
+            # what get_blast_radius reports.
+            return self.get_blast_radius(agent_id)
+
+        working = self._graph.copy()
+        # Remove every hub except the agent itself. Anything reachable from
+        # agent_id in the trimmed graph is reachable *without* passing through
+        # the orchestrator — those are the real dependents.
+        for hub in hub_ids:
+            if hub != agent_id and hub in working:
+                working.remove_node(hub)
+
+        if agent_id not in working:
+            # Defensive — should not happen since we exclude self from hubs.
+            return self.get_blast_radius(agent_id)
+
+        downstream = list(nx.descendants(working, agent_id))
+        total_agents = self._graph.number_of_nodes()
+        impact_pct = (len(downstream) / max(total_agents - 1, 1)) * 100
+
+        agent_name = self._graph.nodes[agent_id].get("name", agent_id)
+        downstream_set = set(downstream)
+        affected_edges = sum(
+            1
+            for src, dst in self._graph.edges()
+            if (src == agent_id or src in downstream_set) and dst in (downstream_set | {agent_id})
+        )
+
+        return {
+            "agent_id": agent_id,
+            "agent_name": agent_name,
+            "downstream_agents": downstream,
+            "affected_edge_count": affected_edges,
             "total_agents": total_agents,
             "impact_percentage": round(impact_pct, 2),
         }
@@ -318,6 +382,32 @@ class SwarmGraph:
     @property
     def graph(self) -> nx.MultiDiGraph:
         return self._graph
+
+    @property
+    def role_context(self) -> Any | None:
+        """The ``RoleContext`` attached by the probe before attacks run.
+
+        Returns ``None`` when no probe has classified roles yet (e.g. an
+        attack run directly against a SwarmGraph in a unit test). Attacks
+        must tolerate ``None`` and fall back to their non-role-aware paths.
+        """
+        return self._role_context
+
+    def attach_role_context(self, role_context: Any) -> None:
+        """Attach a pre-computed ``RoleContext`` so attacks can read it."""
+        self._role_context = role_context
+
+    def classify_roles(self) -> Any:
+        """Classify every agent and cache the resulting ``RoleContext``.
+
+        Used by the probe to compute roles once per run. Honors
+        ``intentional_role`` on AgentNode via ``classify_agent``.
+        """
+        from swarm_test.core.taxonomy import RoleContext, classify_all
+
+        role_map = classify_all(self._graph, agents=self._agents, edges=self._events)
+        self._role_context = RoleContext(role_map)
+        return self._role_context
 
     def node_data(self) -> list[dict[str, Any]]:
         """Serialize nodes for rendering."""

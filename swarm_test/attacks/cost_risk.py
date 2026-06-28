@@ -114,6 +114,14 @@ class CostRiskAttack(BaseAttack):
         score = 0
         drivers: list[str] = []
 
+        role_ctx = getattr(graph, "role_context", None)
+        # Only *declared* hubs suppress cycle / retry findings. Inferred-only
+        # hubs are still subject to the full cost analysis since pure
+        # structural inference isn't enough ground truth to silence findings.
+        hub_ids: set[str] = (
+            role_ctx.intentional_hubs if role_ctx is not None else set()
+        )
+
         # 1) Self-loops and cycles (unbounded vs feedback).
         self_loop_findings, self_loop_score = self._scan_self_loops(g, name_of)
         findings.extend(self_loop_findings)
@@ -122,7 +130,7 @@ class CostRiskAttack(BaseAttack):
             drivers.append(f"{len(self_loop_findings)} self-invocation loops")
 
         cycle_findings, cycle_score, unbounded_count, feedback_count = self._scan_cycles(
-            simple, name_of
+            simple, name_of, hub_ids=hub_ids
         )
         findings.extend(cycle_findings)
         score += cycle_score
@@ -132,7 +140,7 @@ class CostRiskAttack(BaseAttack):
             drivers.append(f"{feedback_count} feedback loop{'s' if feedback_count != 1 else ''}")
 
         # 2) Fragile single-upstream (retry-prone) dependencies.
-        retry_findings, retry_score = self._scan_retry_prone(simple, name_of)
+        retry_findings, retry_score = self._scan_retry_prone(simple, name_of, hub_ids=hub_ids)
         findings.extend(retry_findings)
         score += retry_score
         if retry_findings:
@@ -148,7 +156,9 @@ class CostRiskAttack(BaseAttack):
             drivers.append(f"critical path {longest_path_len} hops")
 
         # 4) High fan-out nodes.
-        fanout_findings, fanout_score = self._scan_high_fanout(simple, name_of)
+        fanout_findings, fanout_score = self._scan_high_fanout(
+            simple, name_of, hub_ids=hub_ids
+        )
         findings.extend(fanout_findings)
         score += fanout_score
         if fanout_findings:
@@ -233,6 +243,7 @@ class CostRiskAttack(BaseAttack):
         self,
         simple: nx.DiGraph,
         name_of: dict[str, str],
+        hub_ids: set[str] | None = None,
     ) -> tuple[list[Finding], int, int, int]:
         try:
             raw_cycles = [c for c in nx.simple_cycles(simple) if len(c) >= 2]
@@ -245,6 +256,7 @@ class CostRiskAttack(BaseAttack):
         score = 0
         unbounded_count = 0
         feedback_count = 0
+        hub_ids = hub_ids or set()
 
         # Sort cycles by sorted member-name tuple for deterministic order.
         def _cycle_key(c: list[str]) -> tuple[str, ...]:
@@ -260,6 +272,17 @@ class CostRiskAttack(BaseAttack):
             has_exit = any(
                 succ not in cycle_set for nid in cycle for succ in simple.successors(nid)
             )
+
+            # Worker ↔ Orchestrator return path is the normal request/response
+            # pattern through an intentional hub. Only suppress when the cycle
+            # has an exit edge (it's bounded by the hub's flow control), and at
+            # least one member is a declared hub. A 2-node cycle whose only
+            # exit is the hub still counts as a normal return path. A cycle
+            # with NO exit (unbounded) is still flagged — even if the hub
+            # routes through it, the topology lets it spin forever.
+            cycle_hubs = cycle_set & hub_ids
+            if has_exit and cycle_hubs:
+                continue
 
             sorted_names = sorted(name_of.get(nid, nid) for nid in cycle)
             primary_name = sorted_names[0]
@@ -305,12 +328,19 @@ class CostRiskAttack(BaseAttack):
                 feedback_count += 1
                 weight = _W_FEEDBACK_LOOP_BASE + _W_FEEDBACK_LOOP_PER_HOP * length
                 score += weight
+                # 2-node feedback loops are also flagged by collusion (when
+                # they bypass the orchestrator) and by trajectory ping-pong.
+                # Demote to MEDIUM so a single architectural fact isn't worth
+                # three independent HIGH/CRITICAL findings. Length 3+ cycles
+                # describe distinct multi-agent feedback risk → keep HIGH.
+                fb_severity = Severity.MEDIUM if length == 2 else Severity.HIGH
+                fb_label = "MEDIUM" if length == 2 else "HIGH"
                 findings.append(
                     Finding(
                         test_name=self.name,
-                        severity=Severity.HIGH,
+                        severity=fb_severity,
                         title=(
-                            f"Cost risk: HIGH — feedback loop ({members_inline}) "
+                            f"Cost risk: {fb_label} — feedback loop ({members_inline}) "
                             f"amplifies token spend per lap"
                         ),
                         description=(
@@ -324,7 +354,7 @@ class CostRiskAttack(BaseAttack):
                             "cycle_members": sorted_names,
                             "cycle_length": length,
                             "has_exit": True,
-                            "cost_risk_label": "HIGH",
+                            "cost_risk_label": fb_label,
                             "factor": "feedback_loop",
                         },
                         remediation=(
@@ -345,15 +375,24 @@ class CostRiskAttack(BaseAttack):
         self,
         simple: nx.DiGraph,
         name_of: dict[str, str],
+        hub_ids: set[str] | None = None,
     ) -> tuple[list[Finding], int]:
         """Flag agents with exactly one upstream and at least one downstream.
 
         A single-upstream node has no fallback path: if the upstream call fails,
         the downstream work was wasted and a retry re-spends the upstream's
         token cost too. This is a static retry-amplification signal.
+
+        When the single upstream is the recognised intentional orchestrator,
+        the dependency is by design — every spoke being fed by the hub is the
+        whole point. We suppress those per-spoke findings (and emit a single
+        aggregate finding describing the fan-out) so the report doesn't read
+        as "every worker is fragile" for a perfectly normal hub topology.
+        Non-orchestrator sole upstreams stay HIGH.
         """
         findings: list[Finding] = []
         candidates: list[tuple[str, str]] = []
+        hub_ids = hub_ids or set()
         for nid in simple.nodes():
             preds = list(simple.predecessors(nid))
             succs = list(simple.successors(nid))
@@ -368,8 +407,100 @@ class CostRiskAttack(BaseAttack):
             key=lambda pair: (name_of.get(pair[0], pair[0]), name_of.get(pair[1], pair[1]))
         )
 
-        score = 0
+        # Split candidates into hub-upstream (collapse) vs non-hub (emit each).
+        hub_spokes: dict[str, list[tuple[str, str]]] = {}
+        non_hub: list[tuple[str, str]] = []
         for nid, upstream_id in candidates:
+            if upstream_id in hub_ids:
+                hub_spokes.setdefault(upstream_id, []).append((nid, upstream_id))
+            else:
+                non_hub.append((nid, upstream_id))
+
+        # Cycle dedup: in an N-node cycle every member has exactly one upstream
+        # (its cycle predecessor) and at least one downstream, so each member
+        # would emit its own "fragile dependency X → Y" finding. They describe
+        # the same architectural fact — the cycle — and the unbounded/feedback
+        # finding already names it. Collapse all per-edge findings whose
+        # endpoints both live in the same SCC into one cycle-cluster finding.
+        scc_groups: dict[frozenset[str], list[tuple[str, str]]] = {}
+        non_cycle: list[tuple[str, str]] = []
+        try:
+            sccs = [scc for scc in nx.strongly_connected_components(simple) if len(scc) >= 2]
+        except Exception:
+            sccs = []
+        scc_membership: dict[str, frozenset[str]] = {}
+        for scc in sccs:
+            frozen = frozenset(scc)
+            for nid in scc:
+                scc_membership[nid] = frozen
+        for nid, upstream_id in non_hub:
+            scc_a = scc_membership.get(nid)
+            scc_b = scc_membership.get(upstream_id)
+            if scc_a is not None and scc_a == scc_b:
+                scc_groups.setdefault(scc_a, []).append((nid, upstream_id))
+            else:
+                non_cycle.append((nid, upstream_id))
+
+        score = 0
+        # Emit one collapsed finding per SCC that owns >= 2 fragile edges.
+        # SCCs with a single edge fall back to the per-edge path (it's not
+        # a cycle in any meaningful sense).
+        for scc, group in scc_groups.items():
+            if len(group) < 2:
+                non_cycle.extend(group)
+                continue
+            member_names = sorted(name_of.get(nid, nid) for nid in scc)
+            edge_strs = sorted(
+                f"{name_of.get(u, u)}→{name_of.get(d, d)}" for d, u in group
+            )
+            sample = ", ".join(edge_strs[:5])
+            if len(edge_strs) > 5:
+                sample += f", … (+{len(edge_strs) - 5} more)"
+            affected: list[str] = []
+            seen_aff: set[str] = set()
+            for d, u in group:
+                for aid in (u, d):
+                    if aid not in seen_aff:
+                        seen_aff.add(aid)
+                        affected.append(aid)
+            findings.append(
+                Finding(
+                    test_name=self.name,
+                    severity=Severity.HIGH,
+                    title=(
+                        f"Cost risk: HIGH — cycle ({', '.join(member_names)}) creates "
+                        f"{len(group)} fragile-dependency edges with no fallback"
+                    ),
+                    description=(
+                        f"Each agent in the cycle ({', '.join(member_names)}) has "
+                        f"exactly one upstream — its cycle predecessor — and no "
+                        f"alternative path. {len(group)} fragile-dependency edges "
+                        f"({sample}) all share the same root cause: the cycle. A "
+                        f"failure anywhere in the loop forces every other member "
+                        f"to wait or retry, compounding token cost per lap. The "
+                        f"unbounded/feedback loop finding for this cycle names the "
+                        f"primary risk; this record captures the per-edge "
+                        f"fragility. {_ESTIMATE_NOTE}"
+                    ),
+                    affected_agents=affected,
+                    evidence={
+                        "cycle_members": member_names,
+                        "fragile_edges": edge_strs,
+                        "edge_count": len(group),
+                        "cost_risk_label": "MEDIUM-HIGH",
+                        "factor": "retry_prone_cycle",
+                    },
+                    remediation=(
+                        f"Break the cycle ({', '.join(member_names)}) by adding an "
+                        f"exit edge or memoising each member's output so a retry "
+                        f"doesn't re-spend the predecessor's tokens. Fixing the "
+                        f"cycle topology closes all {len(group)} fragile edges at once."
+                    ),
+                )
+            )
+            score += _W_RETRY_PRONE  # Single weight contribution for the cluster.
+
+        for nid, upstream_id in non_cycle:
             downstream_name = name_of.get(nid, nid)
             upstream_name = name_of.get(upstream_id, upstream_id)
             findings.append(
@@ -405,6 +536,52 @@ class CostRiskAttack(BaseAttack):
             score += _W_RETRY_PRONE
         # Cap retry-prone contribution so a long chain doesn't pin the score to 100 alone.
         score = min(score, 30)
+
+        # Emit one INFO finding per hub that owns >=2 spokes — captures the
+        # "every worker has the hub as its sole upstream" fact without firing
+        # a HIGH per spoke. We intentionally emit nothing for single-spoke
+        # hubs since that's already covered by other findings.
+        for hub_id, group in hub_spokes.items():
+            if len(group) < 2:
+                continue
+            hub_name = name_of.get(hub_id, hub_id)
+            spoke_names = sorted(name_of.get(nid, nid) for nid, _ in group)
+            spoke_label = ", ".join(spoke_names[:5])
+            if len(spoke_names) > 5:
+                spoke_label += f", … (+{len(spoke_names) - 5} more)"
+            findings.append(
+                Finding(
+                    test_name=self.name,
+                    severity=Severity.INFO,
+                    title=(
+                        f"Cost risk: INFO — {len(spoke_names)} spokes share "
+                        f"{hub_name} as sole upstream (intentional hub fan-out)"
+                    ),
+                    description=(
+                        f"{len(spoke_names)} agents ({spoke_label}) each have "
+                        f"'{hub_name}' as their only upstream. {hub_name} is the "
+                        f"recognised intentional hub for this swarm, so this is "
+                        f"the design — not a fragile dependency on a random "
+                        f"single node. Retry-amplification risk still applies if "
+                        f"'{hub_name}' fails; consider memoising its outputs so "
+                        f"a retry doesn't re-spend its tokens. {_ESTIMATE_NOTE}"
+                    ),
+                    affected_agents=[hub_id] + [nid for nid, _ in group],
+                    evidence={
+                        "hub": hub_name,
+                        "spokes": spoke_names,
+                        "spoke_count": len(spoke_names),
+                        "cost_risk_label": "INFO",
+                        "factor": "intentional_hub_fanout",
+                    },
+                    remediation=(
+                        f"Hub-and-spoke around '{hub_name}' is intentional. "
+                        f"To bound retry cost, memoise '{hub_name}' outputs or "
+                        f"add a hot standby so a single failure doesn't cascade."
+                    ),
+                )
+            )
+
         return findings, score
 
     # ------------------------------------------------------------------
@@ -479,9 +656,11 @@ class CostRiskAttack(BaseAttack):
         self,
         simple: nx.DiGraph,
         name_of: dict[str, str],
+        hub_ids: set[str] | None = None,
     ) -> tuple[list[Finding], int]:
         findings: list[Finding] = []
         score = 0
+        hub_ids = hub_ids or set()
         # Sort by name for deterministic finding order.
         nodes_sorted = sorted(simple.nodes(), key=lambda nid: name_of.get(nid, nid))
         for nid in nodes_sorted:
@@ -492,12 +671,18 @@ class CostRiskAttack(BaseAttack):
             downstream = sorted(
                 (name_of.get(d, d) for d in simple.successors(nid)),
             )
+            # High fan-out IS the design for an intentional hub. Demote to
+            # INFO so the score isn't penalised for the architecture the
+            # user declared, but still surface it.
+            is_hub = nid in hub_ids
+            severity = Severity.INFO if is_hub else Severity.MEDIUM
+            title_label = "INFO" if is_hub else "MEDIUM"
             findings.append(
                 Finding(
                     test_name=self.name,
-                    severity=Severity.MEDIUM,
+                    severity=severity,
                     title=(
-                        f"Cost risk: MEDIUM — high fan-out at {nm} "
+                        f"Cost risk: {title_label} — high fan-out at {nm} "
                         f"(calls {out_deg} downstream agents per invocation)"
                     ),
                     description=(
@@ -512,8 +697,9 @@ class CostRiskAttack(BaseAttack):
                         "agent_name": nm,
                         "out_degree": out_deg,
                         "downstream": downstream,
-                        "cost_risk_label": "MEDIUM",
+                        "cost_risk_label": title_label,
                         "factor": "high_fanout",
+                        "is_intentional_hub": is_hub,
                     },
                     remediation=(
                         f"Gate downstream calls behind a router or filter so '{nm}' "

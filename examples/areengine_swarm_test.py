@@ -80,6 +80,15 @@ def build_are_swarm():
         ("HealthMonitorAgent",   "health",           "background health probe"),
     ]
 
+    # Declare which agents are the intentional hub(s). For ARE the
+    # OrchestratorAgent is the central coordinator by design — its high blast
+    # radius and centrality are intended, not a flaw. We mark it with
+    # intentional_role="ORCHESTRATOR" so swarm-test's role-aware attacks treat
+    # spokes-talking-to-the-orchestrator as normal flow.
+    _INTENTIONAL_ROLES: dict[str, str] = {
+        "OrchestratorAgent": "ORCHESTRATOR",
+    }
+
     nodes: dict[str, AgentNode] = {}
     for name, role, description in specs:
         nodes[name] = AgentNode(
@@ -92,6 +101,7 @@ def build_are_swarm():
                 "live_class_present": orchestrator is not None
                                        and hasattr(orchestrator, role.replace("-", "_")),
             },
+            intentional_role=_INTENTIONAL_ROLES.get(name),
         )
 
     O = nodes["OrchestratorAgent"]

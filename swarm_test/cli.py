@@ -52,6 +52,37 @@ def _open_in_browser(path: str) -> None:
         console.print(f"[yellow]Could not open browser ({exc}); open {path} manually.[/yellow]")
 
 
+# Role tokens accepted in CLI "-a Name:role" syntax that map to a declared
+# intentional hub. Anything outside this set leaves intentional_role unset and
+# the role still flows into the lexical-hint classifier as a soft signal.
+_INTENTIONAL_ORCHESTRATOR_TOKENS = frozenset(
+    {
+        "orchestrator",
+        "coordinator",
+        "manager",
+        "supervisor",
+        "dispatcher",
+        "planner",
+        "hub",
+    }
+)
+_INTENTIONAL_AGGREGATOR_TOKENS = frozenset(
+    {"aggregator", "aggregate", "collector", "consolidator", "reducer"}
+)
+
+
+def _role_text_to_intentional(role_text: str) -> str | None:
+    """Map a free-form role token to an intentional AgentRole, if any."""
+    text = (role_text or "").strip().lower()
+    if not text or text == "unknown":
+        return None
+    if text in _INTENTIONAL_ORCHESTRATOR_TOKENS:
+        return "ORCHESTRATOR"
+    if text in _INTENTIONAL_AGGREGATOR_TOKENS:
+        return "AGGREGATOR"
+    return None
+
+
 @click.group()
 @click.version_option(package_name="swarm-test", prog_name="swarm-test")
 def cli() -> None:
@@ -289,15 +320,33 @@ def scan(
 
     verbosity = _resolve_verbosity(quiet, verbose)
 
-    # Parse agents
-    agent_names = [a.strip() for a in agents.split(",") if a.strip()]
-    if not agent_names:
+    # Parse agents. Accepts plain names ("Hub") or "name:role" pairs
+    # ("Hub:orchestrator") so users can declare an intentional hub on the
+    # command line without writing Python. Role tokens recognised as hubs
+    # (orchestrator/coordinator/manager/supervisor/dispatcher/planner) are
+    # promoted to intentional_role=ORCHESTRATOR; aggregator/aggregate become
+    # intentional_role=AGGREGATOR. Other roles are kept as a free-form label
+    # used by the lexical-hint classifier.
+    agent_specs = [a.strip() for a in agents.split(",") if a.strip()]
+    if not agent_specs:
         console.print("[red]No agents provided.[/red]")
         sys.exit(1)
 
     agent_nodes: dict[str, AgentNode] = {}
-    for ag in agent_names:
-        agent_nodes[ag] = AgentNode(name=ag, role="unknown")
+    for spec in agent_specs:
+        if ":" in spec:
+            name_part, _, role_part = spec.partition(":")
+            agent_name = name_part.strip()
+            role_text = role_part.strip().lower()
+        else:
+            agent_name = spec
+            role_text = "unknown"
+        intentional = _role_text_to_intentional(role_text)
+        agent_nodes[agent_name] = AgentNode(
+            name=agent_name,
+            role=role_text or "unknown",
+            intentional_role=intentional,
+        )
 
     # Parse edges
     edge_specs = [e.strip() for e in edges.split(",") if e.strip()]

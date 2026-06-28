@@ -139,8 +139,21 @@ class IntentDriftAttack(BaseAttack):
                     )
                 )
 
+        # 4. Privilege-escalation write-back (non-orchestrator writing to the
+        # hub's memory). Distinct from normal AGENT_RESPONSE returns.
+        # Runs before unusual-delegation so we can suppress duplicates.
+        write_back_findings = self._check_privilege_writeback(graph)
+        findings.extend(write_back_findings)
+        writeback_edges = {
+            tuple(f.affected_agents[:2])
+            for f in write_back_findings
+            if len(f.affected_agents) >= 2
+        }
+
         # 3. Detect unexpected delegation (low-privilege → high-privilege)
-        delegation_findings = self._check_unexpected_delegation(graph)
+        delegation_findings = self._check_unexpected_delegation(
+            graph, suppressed_edges=writeback_edges
+        )
         findings.extend(delegation_findings)
 
         metrics["drift_events"] = metrics["hijacking_attempts"] + metrics["role_violations"]
@@ -182,10 +195,22 @@ class IntentDriftAttack(BaseAttack):
         return list(set(violations))
 
     @staticmethod
-    def _check_unexpected_delegation(graph: Any) -> list[Finding]:
+    def _check_unexpected_delegation(
+        graph: Any, suppressed_edges: set[tuple[str, str]] | None = None
+    ) -> list[Finding]:
         """
         Detect edges where an agent delegates to another agent with a
         higher out-degree (centrality), which might indicate privilege escalation.
+
+        Suppresses the false-positive case where a worker simply RETURNS a
+        result to the recognised intentional orchestrator (AGENT_RESPONSE or
+        CONTEXT_SHARE event types) — that's the normal call/return pattern
+        and not a privilege-escalation signal. Active CALL/DELEGATE/WRITE
+        events from a worker to the hub are still surfaced as findings.
+
+        Also suppresses edges where the source is classified as MONITOR
+        (heartbeat/probe events to the hub) and edges already covered by the
+        higher-severity write-back finding (``suppressed_edges``).
         """
         findings: list[Finding] = []
         centrality: dict[str, float] = {}
@@ -196,12 +221,37 @@ class IntentDriftAttack(BaseAttack):
         except Exception:
             return findings
 
+        role_ctx = getattr(graph, "role_context", None)
+        # Return-path suppression only applies to *declared* hubs — inferred
+        # orchestrators don't get to silence privilege-escalation signals.
+        hub_ids: set[str] = (
+            role_ctx.intentional_hubs if role_ctx is not None else set()
+        )
+        suppressed_edges = suppressed_edges or set()
+
+        # Event types that represent a return / handoff to the hub. When the
+        # destination is the intentional hub, these are normal flow.
+        normal_return_types = {"agent_response", "context_share"}
+        from swarm_test.core.taxonomy import AgentRole
+
         for src, dst, data in graph.graph.edges(data=True):
             src_centrality = centrality.get(src, 0)
             dst_centrality = centrality.get(dst, 0)
 
             # Flag: peripheral agent delegating to highly central agent
             if dst_centrality > src_centrality * 3 and dst_centrality > 0.4:
+                # Already represented by a write-back HIGH finding — skip.
+                if (src, dst) in suppressed_edges:
+                    continue
+                # Suppress normal worker→hub returns.
+                if dst in hub_ids:
+                    event_type = (data.get("event_type") or "").lower()
+                    if event_type in normal_return_types:
+                        continue
+                    # Monitors heartbeating into the hub is expected behaviour,
+                    # not a privilege-escalation signal.
+                    if role_ctx is not None and role_ctx.role_of(src) == AgentRole.MONITOR:
+                        continue
                 src_name = graph.graph.nodes[src].get("name", src)
                 dst_name = graph.graph.nodes[dst].get("name", dst)
                 findings.append(
@@ -237,6 +287,76 @@ class IntentDriftAttack(BaseAttack):
                 seen.add(key)
                 unique.append(f)
         return unique
+
+    @staticmethod
+    def _check_privilege_writeback(graph: Any) -> list[Finding]:
+        """Flag non-hub agents writing to the hub's memory.
+
+        ``EvolutionAgent → Orchestrator (MEMORY_WRITE)`` is the canonical
+        example: a background agent silently mutates the orchestrator's
+        config without orchestrator-initiated handshake. This is a
+        privilege-escalation pattern distinct from the "unusual delegation"
+        check — we identify the destination as an intentional hub and the
+        event as a write/mutation rather than a return.
+        """
+        findings: list[Finding] = []
+        role_ctx = getattr(graph, "role_context", None)
+        if role_ctx is None:
+            return findings
+        # Write-back detection requires a *declared* hub. Pure inference
+        # would risk firing on every cycle node with high centrality.
+        hub_ids: set[str] = role_ctx.intentional_hubs
+        if not hub_ids:
+            return findings
+
+        # Write/mutation event types that should not flow from a non-hub
+        # agent to the hub without orchestrator initiation.
+        write_event_types = {"memory_write"}
+
+        seen_pairs: set[tuple[str, str]] = set()
+        for event in getattr(graph, "events", []):
+            src = event.source_agent_id
+            dst = event.target_agent_id
+            if dst not in hub_ids or src in hub_ids:
+                continue
+            etype = event.event_type.value if hasattr(event.event_type, "value") else str(
+                event.event_type
+            )
+            if etype.lower() not in write_event_types:
+                continue
+            if (src, dst) in seen_pairs:
+                continue
+            seen_pairs.add((src, dst))
+
+            src_name = graph.graph.nodes[src].get("name", src) if src in graph.graph else src
+            dst_name = graph.graph.nodes[dst].get("name", dst) if dst in graph.graph else dst
+            findings.append(
+                Finding(
+                    test_name="intent_drift",
+                    severity=Severity.HIGH,
+                    title=(
+                        f"Unvalidated write-back: {src_name} mutates {dst_name}'s state "
+                        f"without orchestrator handshake"
+                    ),
+                    description=(
+                        f"Agent '{src_name}' writes to '{dst_name}' (an intentional hub) "
+                        f"via {etype} without {dst_name} initiating the call. Background "
+                        f"agents writing to hub config / memory can drift orchestrator "
+                        f"behaviour silently — there is no validator on the write path."
+                    ),
+                    affected_agents=[src, dst],
+                    evidence={
+                        "event_type": etype,
+                        "payload_keys": sorted((event.payload or {}).keys()),
+                    },
+                    remediation=(
+                        f"Route writes from '{src_name}' through a validator agent or "
+                        f"require '{dst_name}' to pull config on demand instead of "
+                        f"accepting unsolicited writes."
+                    ),
+                )
+            )
+        return findings
 
     @staticmethod
     def _agent_name(graph: Any, agent_id: str) -> str:

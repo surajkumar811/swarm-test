@@ -105,6 +105,124 @@ _WORKER_HINTS = ("worker", "task", "executor", "runner", "processor")
 _ROUTER_HINTS = ("router", "switch", "broker", "relay")
 
 
+def _declared_intentional_role(
+    agent_id: str, agents: dict[str, Any], graph: Any
+) -> str | None:
+    """Return the user-declared intentional role for an agent, if any.
+
+    Looks at the AgentNode's ``intentional_role`` field first; falls back to
+    a graph-node attribute of the same name (used by adapters that don't go
+    through the AgentNode object). Normalises the value against ``ALL_ROLES``
+    so callers don't have to.
+    """
+    raw: Any = None
+    agent_obj = agents.get(agent_id) if isinstance(agents, dict) else None
+    if agent_obj is not None:
+        raw = getattr(agent_obj, "intentional_role", None)
+    if not raw and graph is not None and agent_id in graph.nodes:
+        raw = graph.nodes[agent_id].get("intentional_role")
+    if not raw:
+        return None
+    candidate = str(raw).strip().upper()
+    if candidate in ALL_ROLES:
+        return candidate
+    return None
+
+
+def is_hub_role(role: str) -> bool:
+    """True if a role's ``RISK_PROFILE`` expects high blast radius by design.
+
+    Used by attacks to decide whether centrality findings on this agent are a
+    real risk or an expected consequence of the role. ORCHESTRATOR and
+    AGGREGATOR qualify by their RISK_PROFILES.
+    """
+    profile = RISK_PROFILES.get(role)
+    return bool(profile and profile.get("expected_high_blast_radius"))
+
+
+# Default minimum confidence for treating an inferred hub as "intentional".
+# Declared intentional_role values come in at 1.0 and always clear this bar.
+HUB_CONFIDENCE_THRESHOLD = 0.7
+
+
+# Structural minimums for the ORCHESTRATOR role. Without these absolute
+# thresholds a 4-node hub-and-spoke or a 3-node cycle trips the ratio-only
+# heuristic and labels every spoke / cycle member as an orchestrator.
+_HUB_MIN_OUT_DEG = 3
+_HUB_BET_RATIO = 0.5
+
+
+class RoleContext:
+    """Per-graph role classification + helpers used by attacks.
+
+    Built once per probe run and attached to the SwarmGraph so every attack
+    sees the same classification result without redoing the centrality work.
+
+    Splits hubs into two cohorts:
+    - **intentional hubs** — declared by the user via ``intentional_role``
+      (confidence = 1.0). These get full finding-suppression because the user
+      explicitly accepted the design.
+    - **inferred hubs** — structurally classified as orchestrator/aggregator
+      above the confidence threshold but not declared. These get *severity
+      downgrade* via ``role_adjusted_severity`` (one notch down) but still
+      emit findings; pure inference isn't ground truth.
+    """
+
+    def __init__(self, role_map: dict[str, tuple[str, float]]) -> None:
+        self.role_map: dict[str, tuple[str, float]] = dict(role_map)
+        self._intentional_hubs: set[str] = {
+            aid
+            for aid, (role, conf) in self.role_map.items()
+            if is_hub_role(role) and conf >= 0.999
+        }
+        self._inferred_hubs: set[str] = {
+            aid
+            for aid, (role, conf) in self.role_map.items()
+            if (
+                is_hub_role(role)
+                and HUB_CONFIDENCE_THRESHOLD <= conf < 0.999
+            )
+        }
+
+    def role_of(self, agent_id: str) -> str:
+        entry = self.role_map.get(agent_id)
+        return entry[0] if entry else AgentRole.UNKNOWN
+
+    def confidence_of(self, agent_id: str) -> float:
+        entry = self.role_map.get(agent_id)
+        return float(entry[1]) if entry else 0.0
+
+    def is_intentional_hub(self, agent_id: str) -> bool:
+        """True for *declared* hubs only.
+
+        Triggers full finding-suppression in attacks. Inferred-from-structure
+        hubs return False here even when their confidence is high — pure
+        inference is not enough to silence findings.
+        """
+        return agent_id in self._intentional_hubs
+
+    def is_inferred_hub(self, agent_id: str) -> bool:
+        """True for high-confidence structural orchestrators (not declared).
+
+        Triggers severity *downgrade* via ``role_adjusted_severity`` but not
+        outright suppression.
+        """
+        return agent_id in self._inferred_hubs
+
+    @property
+    def hubs(self) -> set[str]:
+        """Union of intentional + inferred hubs — for backwards-compat callers."""
+        return self._intentional_hubs | self._inferred_hubs
+
+    @property
+    def intentional_hubs(self) -> set[str]:
+        return set(self._intentional_hubs)
+
+    @property
+    def inferred_hubs(self) -> set[str]:
+        return set(self._inferred_hubs)
+
+
 def _name_hint(agent_id: str, agents: dict[str, Any], graph: Any) -> tuple[str, str]:
     """Return (name_lower, role_lower) for hint matching."""
     name = ""
@@ -135,12 +253,21 @@ def classify_agent(
 
     Returns ``(role, confidence)`` where confidence is in [0.0, 1.0].
 
-    Uses both structural graph metrics and name/role lexical hints.
+    Uses both structural graph metrics and name/role lexical hints. When the
+    agent has ``intentional_role`` set, that role is returned with confidence
+    1.0 — the user's explicit declaration overrides inference.
     """
     if graph is None or agent_id not in graph.nodes:
         return AgentRole.UNKNOWN, 0.0
 
     agents = agents or {}
+
+    # Honor user-declared intentional role before structural inference. A
+    # declared role is treated as ground truth (confidence = 1.0) so attacks
+    # can trust the hub designation without depending on the heuristic margin.
+    declared = _declared_intentional_role(agent_id, agents, graph)
+    if declared is not None:
+        return declared, 1.0
     n = graph.number_of_nodes()
     if n <= 1:
         # Single-node graph — classify purely by name hints if any
@@ -185,33 +312,50 @@ def classify_agent(
     candidates: dict[str, float] = {}
 
     # ---------------- Structural scoring -----------------
-    # ORCHESTRATOR: many outgoing edges, high betweenness, more out than in.
+    # ORCHESTRATOR: must look like a hub — high out-degree fan-out to many
+    # distinct agents AND high betweenness. A pure spoke (out_deg=1 back to a
+    # hub) or a cycle member (out_deg=in_deg=1) must NOT score as orchestrator
+    # just because the graph is small and the ratio happens to clear 0.3.
     score = 0.0
-    if out_ratio > 0.3:
+    if out_deg >= _HUB_MIN_OUT_DEG and bet_ratio > _HUB_BET_RATIO:
+        # Real hub: many distinct targets AND sits on most paths.
         score += 0.45
-    elif out_ratio > 0.2:
+        if out_deg > in_deg:
+            score += 0.15
+    elif out_deg >= _HUB_MIN_OUT_DEG and out_deg > in_deg:
+        # High fan-out without proven centrality (leaf workers downstream):
+        # weaker signal — typical for a dispatcher with no return paths.
+        score += 0.35
+    elif out_deg >= 2 and in_deg == 0:
+        # Pure source with multiple targets — small but unambiguous fan-out
+        # (covers small graphs where the hub has no return edges yet).
         score += 0.25
-    if out_deg > in_deg and out_deg >= 2:
-        score += 0.2
-    if bet_ratio > 0.5:
-        score += 0.2
     candidates[AgentRole.ORCHESTRATOR] = score
 
-    # AGGREGATOR: many incoming edges, low outgoing.
+    # AGGREGATOR: must look like a sink — many distinct sources fanning IN
+    # with low outgoing. A 1-in 1-out spoke is not an aggregator. Mirrors
+    # the absolute-threshold fix applied to ORCHESTRATOR above.
     score = 0.0
-    if in_ratio > 0.3:
+    if in_deg >= _HUB_MIN_OUT_DEG and out_deg < in_deg:
+        # Real aggregator: many sources, fewer outgoing edges.
         score += 0.45
-    elif in_ratio > 0.2:
+        if in_deg > out_deg * 2:
+            score += 0.15
+    elif in_deg >= _HUB_MIN_OUT_DEG and out_deg <= 1:
+        # Many sources fan in with at most one outgoing edge — sink-like.
+        score += 0.35
+    elif in_deg >= 2 and out_deg == 0:
+        # Pure sink with multiple sources — small but unambiguous fan-in.
         score += 0.25
-    if in_deg > out_deg * 2 and in_deg >= 2:
-        score += 0.25
-    if out_deg <= 1 and in_deg >= 2:
-        score += 0.15
     candidates[AgentRole.AGGREGATOR] = score
 
-    # VALIDATOR: moderate in, low out, sits in a checking position.
+    # VALIDATOR: moderate in, low out, sits in a checking position. Requires
+    # in_deg >= 2 so a cycle member (in=out=1) doesn't get tagged as a
+    # security-sensitive validator just because the dimensions happen to fit.
+    # The lexical "validator"/"checker"/… hint below still rescues
+    # genuinely-named validators with only one upstream.
     score = 0.0
-    if 1 <= in_deg <= max(2, n // 2) and out_deg <= max(1, in_deg):
+    if in_deg >= 2 and out_deg <= max(1, in_deg // 2):
         score += 0.25
     if in_deg >= 2 and out_deg <= 2:
         score += 0.15

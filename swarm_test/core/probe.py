@@ -272,6 +272,14 @@ class SwarmProbe:
             len(self.graph.events),
         )
 
+        # Classify roles before any attack runs so attacks can read the role
+        # context off the graph. Without this attacks emit CRITICAL findings
+        # for intentional hubs (high-confidence orchestrators by design).
+        try:
+            self.graph.classify_roles()
+        except Exception as exc:  # defensive — must never block attacks
+            logger.warning("Role classification failed: %s", exc)
+
         for attack in self._attacks:
             result = self.run_test(attack)
             results.append(result)
@@ -293,17 +301,21 @@ class SwarmProbe:
             if agent_id in agent_scores:
                 agent_scores[agent_id].redundancy_score = r_score
 
-        # Classify each agent by its role in the graph (orchestrator, worker, etc.)
-        from swarm_test.core.taxonomy import classify_all
+        # Reuse the pre-attack classification we attached to the graph.
+        role_context = self.graph.role_context
+        if role_context is None:
+            from swarm_test.core.taxonomy import classify_all
 
-        role_map = classify_all(
-            self.graph.graph,
-            agents=self.graph.agents,
-            edges=self.graph.events,
-        )
+            role_map_fallback = classify_all(
+                self.graph.graph,
+                agents=self.graph.agents,
+                edges=self.graph.events,
+            )
+        else:
+            role_map_fallback = role_context.role_map
         agent_roles: dict[str, dict[str, Any]] = {
             aid: {"role": role, "confidence": confidence}
-            for aid, (role, confidence) in role_map.items()
+            for aid, (role, confidence) in role_map_fallback.items()
         }
         for aid, info in agent_roles.items():
             agent_obj = self.graph.agents.get(aid)
