@@ -309,6 +309,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   }
   table.data tbody tr:hover { background: rgba(99,102,241,0.06); }
   table.data tbody tr.spof-row { background: rgba(239,68,68,0.08); }
+  table.data tbody tr.spof-row.intentional-hub-row { background: rgba(34,211,238,0.06); }
   table.data tbody tr.expanded-detail td {
     background: var(--card-2);
     color: var(--muted);
@@ -350,6 +351,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   .badge-failed   { background: rgba(239,68,68,0.15); color: var(--fail); }
   .badge-error    { background: rgba(249,115,22,0.15); color: var(--high); }
   .badge-spof     { background: rgba(239,68,68,0.18); color: var(--critical); }
+  .badge-spof-intentional { background: rgba(34,211,238,0.15); color: var(--accent-2); }
   .badge-role-orchestrator { background: rgba(34,211,238,0.15); color: var(--accent-2); }
   .badge-role-aggregator   { background: rgba(34,211,238,0.15); color: var(--accent-2); }
   .badge-role-gateway      { background: rgba(99,102,241,0.18); color: var(--accent); }
@@ -628,7 +630,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 
 <section id="agent-graph">
   <h2 class="section-title">Agent Interaction Graph</h2>
-  <div class="hint">Drag nodes to reposition · scroll to zoom · click a node to highlight its edges · red pulse = single point of failure</div>
+  <div class="hint">Drag nodes to reposition · scroll to zoom · click a node to highlight its edges · red pulse = fragile single point of failure · cyan ring = declared intentional hub (by-design SPOF)</div>
   <div class="graph-container" id="graph-container">
     <div class="legend">
       <span><span class="dot" style="background: var(--pass);"></span>Healthy (≥70)</span>
@@ -740,8 +742,11 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
       </thead>
       <tbody>
         {% for r in redundancy_rows %}
-        <tr class="{{ 'spof-row' if r.is_spof else '' }}">
-          <td><b>{{ r.name }}</b></td>
+        <tr class="{{ 'spof-row' if r.is_spof else '' }}{{ ' intentional-hub-row' if r.is_intentional_hub else '' }}">
+          <td>
+            <b>{{ r.name }}</b>
+            {% if r.is_intentional_hub %}<span class="pill" title="Declared intentional hub via intentional_role=ORCHESTRATOR. SPOF status is by design; loss-of-hub failure mode remains real.">intentional hub</span>{% endif %}
+          </td>
           <td>
             <div class="score-bar-wrap">
               <span style="min-width:46px; color:{{ redundancy_color(r.score) }};"><b>{{ '%.0f' % r.score }}</b>/100</span>
@@ -750,7 +755,8 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
           </td>
           <td>{{ r.level }}</td>
           <td>
-            {% if r.is_spof %}<span class="badge badge-spof">SPOF</span>
+            {% if r.is_spof and r.is_intentional_hub %}<span class="badge badge-spof-intentional" title="SPOF status is by design — the orchestrator is the declared central hub. Loss-of-hub failure mode is real; mitigate with a hot standby if uptime requires it.">SPOF (by-design hub)</span>
+            {% elif r.is_spof %}<span class="badge badge-spof">SPOF</span>
             {% elif r.score <= 60 %}<span class="badge badge-medium">Monitor</span>
             {% else %}<span class="badge badge-passed">Safe</span>{% endif %}
           </td>
@@ -1003,9 +1009,9 @@ document.querySelectorAll('.heatmap-table td.cell').forEach(cell => {
   nodeG.append('circle')
     .attr('r', d => 16 + Math.min((d.degree || 0) * 2, 12))
     .attr('fill', d => healthFill(d.health_score))
-    .attr('stroke', d => d.is_spof ? '#ef4444' : '#0b1020')
-    .attr('stroke-width', d => d.is_spof ? 3 : 2)
-    .attr('class', d => d.is_spof ? 'spof' : '');
+    .attr('stroke', d => d.is_intentional_hub ? '#22d3ee' : (d.is_spof ? '#ef4444' : '#0b1020'))
+    .attr('stroke-width', d => (d.is_spof || d.is_intentional_hub) ? 3 : 2)
+    .attr('class', d => d.is_intentional_hub ? '' : (d.is_spof ? 'spof' : ''));
 
   nodeG.append('text')
     .attr('text-anchor', 'middle').attr('dy', '0.35em')
@@ -1036,7 +1042,9 @@ document.querySelectorAll('.heatmap-table td.cell').forEach(cell => {
         + 'Health: ' + (d.health_score == null ? '—' : d.health_score + '/100') + '<br>'
         + 'Redundancy: ' + (d.redundancy_score == null ? '—' : Math.round(d.redundancy_score) + '/100')
         + (d.tools && d.tools.length ? '<br>Tools: ' + escapeHtml(d.tools.join(', ')) : '')
-        + (d.is_spof ? '<br><span style="color:#ef4444;font-weight:700;">⚠ SPOF</span>' : '');
+        + (d.is_spof && d.is_intentional_hub
+            ? '<br><span style="color:#22d3ee;font-weight:700;">SPOF (by-design hub)</span>'
+            : (d.is_spof ? '<br><span style="color:#ef4444;font-weight:700;">⚠ SPOF</span>' : ''));
       tooltip.style.opacity = '1';
     })
     .on('mousemove', e => {
@@ -1145,6 +1153,7 @@ class HtmlReporter:
         nodes_raw: list[dict[str, Any]] = []
         edges_raw: list[dict[str, Any]] = []
         spof_ids: set[str] = set()
+        intentional_hub_ids: set[str] = set()
         degree: dict[str, int] = defaultdict(int)
 
         if graph is not None:
@@ -1154,6 +1163,12 @@ class HtmlReporter:
                 spof_ids = set(graph.find_single_points_of_failure())
             except Exception:
                 spof_ids = set()
+            role_ctx = getattr(graph, "role_context", None)
+            if role_ctx is not None:
+                try:
+                    intentional_hub_ids = set(role_ctx.intentional_hubs)
+                except Exception:
+                    intentional_hub_ids = set()
             for e in edges_raw:
                 degree[e["source"]] += 1
                 degree[e["target"]] += 1
@@ -1202,6 +1217,7 @@ class HtmlReporter:
                     "health_score": getattr(hs, "score", None) if hs else None,
                     "redundancy_score": getattr(hs, "redundancy_score", None) if hs else None,
                     "is_spof": nid in spof_ids,
+                    "is_intentional_hub": nid in intentional_hub_ids,
                     "tools": tools,
                     "degree": degree.get(nid, 0),
                 }
@@ -1257,6 +1273,7 @@ class HtmlReporter:
                     "score": float(r_score),
                     "level": redundancy_level(float(r_score)),
                     "is_spof": float(r_score) < 20 or aid in spof_ids,
+                    "is_intentional_hub": aid in intentional_hub_ids,
                 }
             )
         redundancy_rows.sort(key=lambda r: r["score"])

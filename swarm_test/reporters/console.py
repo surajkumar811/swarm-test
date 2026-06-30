@@ -385,11 +385,18 @@ class ConsoleReporter:
 
         # Agent redundancy: verbose shows full table, normal shows SPOFs only
         if report.redundancy_scores:
-            rows = []
+            intentional_hub_ids: set[str] = set()
+            for aid, info in (report.agent_roles or {}).items():
+                if float(info.get("confidence", 0.0)) >= 0.999 and str(
+                    info.get("role", "")
+                ).upper() in {"ORCHESTRATOR", "AGGREGATOR"}:
+                    intentional_hub_ids.add(aid)
+
+            rows: list[tuple[str, float, bool]] = []
             for agent_id, score in report.redundancy_scores.items():
                 score_obj = report.agent_scores.get(agent_id)
                 name = score_obj.agent_name if score_obj is not None else agent_id
-                rows.append((name, float(score)))
+                rows.append((name, float(score), agent_id in intentional_hub_ids))
             rows.sort(key=lambda r: r[1])
 
             if not verbose:
@@ -403,14 +410,19 @@ class ConsoleReporter:
                     show_header=True,
                     header_style="bold cyan",
                 )
-                redundancy_table.add_column("Agent", style="bold", width=28)
+                redundancy_table.add_column("Agent", style="bold", width=32)
                 redundancy_table.add_column("Score", width=12, justify="center")
                 redundancy_table.add_column("Level", width=18, justify="center")
-                redundancy_table.add_column("Risk", width=12, justify="center")
+                redundancy_table.add_column("Risk", width=22, justify="center")
 
-                for name, score in rows:
+                for name, score, is_intentional_hub in rows:
                     level = redundancy_level(score)
-                    if score <= 20:
+                    if is_intentional_hub:
+                        # By-design hub — informational, not alarming. Score
+                        # and IRREPLACEABLE level remain truthful; styling matches
+                        # the rest of the report's by-design framing.
+                        score_style = "cyan"
+                    elif score <= 20:
                         score_style = "bold red"
                     elif score <= 40:
                         score_style = "yellow"
@@ -420,14 +432,27 @@ class ConsoleReporter:
                         score_style = "green"
                     else:
                         score_style = "bold bright_green"
-                    risk_label = "SPOF" if score < 20 else ("Monitor" if score <= 60 else "Safe")
-                    risk_style = (
-                        "bold red"
-                        if risk_label == "SPOF"
-                        else "yellow" if risk_label == "Monitor" else "green"
+
+                    if is_intentional_hub and score < 20:
+                        risk_label = "SPOF (by-design hub)"
+                        risk_style = "cyan"
+                    elif score < 20:
+                        risk_label = "SPOF"
+                        risk_style = "bold red"
+                    elif score <= 60:
+                        risk_label = "Monitor"
+                        risk_style = "yellow"
+                    else:
+                        risk_label = "Safe"
+                        risk_style = "green"
+
+                    agent_cell = (
+                        Text.assemble(name, " ", ("[intentional hub]", "cyan"))
+                        if is_intentional_hub
+                        else Text(name)
                     )
                     redundancy_table.add_row(
-                        name,
+                        agent_cell,
                         Text(f"{score:.0f}/100", style=score_style),
                         Text(level, style=score_style),
                         Text(risk_label, style=risk_style),

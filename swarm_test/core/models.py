@@ -480,6 +480,12 @@ class SwarmReport(BaseModel):
             )
 
         # Per-agent redundancy export
+        intentional_hub_ids: set[str] = {
+            aid
+            for aid, info in self.agent_roles.items()
+            if float(info.get("confidence", 0.0)) >= 0.999
+            and str(info.get("role", "")).upper() in {"ORCHESTRATOR", "AGGREGATOR"}
+        }
         redundancy_json: list[dict[str, Any]] = []
         for aid, r_score in self.redundancy_scores.items():
             score_obj = self.agent_scores.get(aid)
@@ -492,6 +498,7 @@ class SwarmReport(BaseModel):
                     "agent_role": role,
                     "score": round(float(r_score), 2),
                     "level": redundancy_level(float(r_score)),
+                    "is_intentional_hub": aid in intentional_hub_ids,
                 }
             )
 
