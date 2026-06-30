@@ -24,7 +24,7 @@ from swarm_test.core.models import (
 from swarm_test.core.probe import SwarmProbe
 from swarm_test.plugins import BasePlugin, PluginRegistry, PluginResult, discover_plugins
 
-__version__ = "0.3.11"
+__version__ = "0.3.12"
 __author__ = "swarm-test contributors"
 __license__ = "MIT"
 
