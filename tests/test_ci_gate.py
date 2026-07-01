@@ -12,6 +12,8 @@ Covers the contract a CI pipeline depends on:
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 
 from click.testing import CliRunner
 
@@ -99,11 +101,29 @@ def test_scan_fail_on_alias_still_works() -> None:
 
 
 def test_scan_ci_json_output_is_parseable() -> None:
-    """--output-format json emits a clean JSON document to stdout."""
-    result = CliRunner().invoke(
-        cli, ["scan", *_BROKEN, "--ci", "--output-format", "json", "--no-history"]
+    """--output-format json emits a clean JSON document to stdout.
+
+    Run as a real subprocess so stdout is genuinely separate from stderr
+    (CliRunner's stdout/stderr handling varies across Click versions); the
+    human-readable notices go to stderr, leaving stdout pure JSON.
+    """
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "swarm_test.cli",
+            "scan",
+            *_BROKEN,
+            "--ci",
+            "--output-format",
+            "json",
+            "--no-history",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
-    assert result.exit_code == 1, result.output
+    assert result.returncode == 1, f"stdout={result.stdout}\nstderr={result.stderr}"
     data = json.loads(result.stdout)
     assert "findings" in data
 
