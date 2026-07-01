@@ -296,6 +296,34 @@ def find_config_path(cwd: Path | None = None) -> Path | None:
     return _discover(cwd or Path.cwd())
 
 
+def config_file_keys(path: str | Path | None = None, cwd: Path | None = None) -> set[str]:
+    """Return the top-level keys a user *explicitly* set in their config source.
+
+    Lets callers distinguish "the user chose this value" from "this is the
+    built-in default". CI mode uses it so ``--ci`` can default
+    ``fail_on_severity`` to ``high`` while still yielding to an explicit
+    ``.swarmtest.yml`` value (config wins over the CI default, but the CI
+    default wins over the library default).
+
+    Returns an empty set if no config source exists or it can't be parsed.
+    """
+    if path is not None:
+        p: Path | None = Path(path)
+        if p is not None and not p.is_file():
+            return set()
+    else:
+        p = _discover(cwd or Path.cwd())
+    if p is None:
+        return set()
+    try:
+        if p.name == "pyproject.toml":
+            section = _load_pyproject(p)
+            return set(section.keys()) if section else set()
+        return set(_load_yaml(p).keys())
+    except Exception:
+        return set()
+
+
 # ----------------------------------------------------------------------
 # CLI merging
 # ----------------------------------------------------------------------

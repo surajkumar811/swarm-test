@@ -6,9 +6,10 @@
 # pyproject.toml. CLI flags always override these values.
 # ------------------------------------------------------------------------------
 
-# Minimum severity that causes `swarm-test run` to exit with code 1.
+# Minimum severity that fails the build (exit code 1). This value is what
+# `--ci` / the GitHub Action reads; when unset, CI mode defaults to `high`.
 # Valid values: critical, high, medium, low, info, none
-fail_on_severity: critical
+fail_on_severity: high
 
 # Blast-radius threshold (0.0 - 1.0). Findings whose blast_radius exceeds
 # this value will trigger failure. 1.0 disables the check.

@@ -27,7 +27,9 @@ inputs:
     required: false
     default: ""
   fail-on-severity:
-    description: "Override severity threshold: critical, high, medium, low, info, none."
+    description: >-
+      Severity threshold that fails the build: critical, high, medium, low, info, none.
+      Leave empty to use fail_on_severity from .swarmtest.yml, or the CI default of 'high'.
     required: false
     default: ""
   output-format:
@@ -78,7 +80,10 @@ runs:
         GITHUB_ACTIONS: "true"
       run: |
         set +e
-        cmd=(swarm-test run --github-action)
+        # --ci: concise one-line summary + default 'high' threshold (yields to
+        # an explicit fail-on-severity or a .swarmtest.yml value).
+        # --github-action: inline PR annotations + job-summary Swarm Score.
+        cmd=(swarm-test run --ci --github-action)
 
         if [ -n "${{ inputs.script }}" ]; then
           cmd+=("${{ inputs.script }}")

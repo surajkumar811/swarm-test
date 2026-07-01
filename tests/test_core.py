@@ -823,8 +823,13 @@ class TestTimeoutResilienceAttack:
         assert len(result.findings) == 0
         assert "note" in result.metrics
 
-    def test_detects_untimed_edges(self):
-        """Edges without duration_ms should be flagged."""
+    def test_untimed_edges_with_no_timing_data_are_info_coverage_gap(self):
+        """No timing data anywhere → INFO coverage gap, not a HIGH/MEDIUM defect.
+
+        Absence of duration_ms means there is no data to judge timeout
+        resilience from (the typical static scan) — it must NOT be overstated as
+        "no timeout configured", which would fail a CI gate on a healthy graph.
+        """
         g = SwarmGraph()
         a = AgentNode(name="Sender", role="worker")
         b = AgentNode(name="Receiver", role="worker")
@@ -840,9 +845,49 @@ class TestTimeoutResilienceAttack:
         )
         attack = TimeoutResilienceAttack()
         result = attack.run(g)
+        gap = [f for f in result.findings if "could not be assessed" in f.description]
+        assert len(gap) == 1
+        assert gap[0].severity == Severity.INFO
+        # The metric still counts untimed edges; only the severity changed.
+        assert result.metrics["edges_without_timeout"] == 1
+        assert result.metrics["timing_data_available"] is False
+        # And no untimed-edge finding is emitted at HIGH/MEDIUM.
+        assert not [f for f in result.findings if "no timeout configured" in f.title]
+
+    def test_untimed_edges_with_partial_timing_data_stay_a_real_finding(self):
+        """When some calls ARE timed, untimed edges remain a genuine gap (not INFO)."""
+        g = SwarmGraph()
+        a = AgentNode(name="A", role="worker")
+        b = AgentNode(name="B", role="worker")
+        c = AgentNode(name="C", role="worker")
+        d = AgentNode(name="D", role="worker")
+        for n in (a, b, c, d):
+            g.add_agent(n)
+        # One timed edge → timing data exists in this run.
+        g.record_event(
+            InteractionEvent(
+                source_agent_id=a.id,
+                target_agent_id=b.id,
+                event_type=EventType.AGENT_CALL,
+                duration_ms=120.0,
+            )
+        )
+        # Three untimed edges → a real partial coverage gap (HIGH, >2 edges).
+        for src, dst in ((a, c), (a, d), (b, c)):
+            g.record_event(
+                InteractionEvent(
+                    source_agent_id=src.id,
+                    target_agent_id=dst.id,
+                    event_type=EventType.AGENT_CALL,
+                    duration_ms=None,
+                )
+            )
+        attack = TimeoutResilienceAttack()
+        result = attack.run(g)
         untimed = [f for f in result.findings if "no timeout configured" in f.title]
         assert len(untimed) == 1
-        assert result.metrics["edges_without_timeout"] == 1
+        assert untimed[0].severity == Severity.HIGH
+        assert result.metrics["timing_data_available"] is True
 
     def test_detects_slow_interaction(self):
         """An edge with duration_ms >= 30000 should produce a CRITICAL finding."""

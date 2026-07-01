@@ -259,10 +259,29 @@ def probe(
     help="Print ASCII agent interaction graph",
 )
 @click.option(
+    "--fail-on-severity",
     "--fail-on",
-    type=click.Choice(["critical", "high", "medium", "low", "info"], case_sensitive=False),
+    "fail_on",
+    type=click.Choice(["critical", "high", "medium", "low", "info", "none"], case_sensitive=False),
     default=None,
-    help="Exit with code 1 if findings at this severity or above exist",
+    help="Exit with code 1 if findings at this severity or above exist (--fail-on is an alias).",
+)
+@click.option(
+    "--ci",
+    "ci",
+    is_flag=True,
+    default=False,
+    help=(
+        "CI gate mode: print the one-line summary and fail the build (exit 1) "
+        "when findings meet/exceed the threshold. Defaults the threshold to "
+        "'high' unless --fail-on-severity or .swarmtest.yml sets it."
+    ),
+)
+@click.option(
+    "--output-format",
+    type=click.Choice(["console", "json"], case_sensitive=False),
+    default=None,
+    help="Print the report as console text (default) or machine-readable JSON to stdout.",
 )
 @click.option(
     "--quiet",
@@ -302,6 +321,8 @@ def scan(
     markdown: str | None,
     graph: bool,
     fail_on: str | None,
+    ci: bool,
+    output_format: str | None,
     quiet: bool,
     verbose: bool,
     open_report: bool,
@@ -313,12 +334,30 @@ def scan(
     Examples:
       swarm-test scan -a "Researcher,Analyst,Writer" -e "Researcher>Analyst,Analyst>Writer"
       swarm-test scan -a "Hub,A,B,C" -e "Hub<>A,Hub<>B,Hub<>C" --html report.html
-      swarm-test scan -a "X,Y,Z" -e "X>Y,Y>Z,Z>X" --fail-on high
+      swarm-test scan -a "X,Y,Z" -e "X>Y,Y>Z,Z>X" --ci   # CI gate: exit 1 on high+ findings
     """
+    from swarm_test.config import config_file_keys, load_config
     from swarm_test.core.models import AgentNode, EventType, InteractionEvent, Severity
     from swarm_test.core.probe import SwarmProbe
 
+    # ---- CI gate mode --------------------------------------------------
+    # Mirror `run --ci`: concise one-line output + a default 'high' threshold
+    # that yields to an explicit flag or a .swarmtest.yml value.
+    config = None
+    if ci:
+        if not quiet and not verbose:
+            quiet = True
+        config = load_config()
+        if output_format is None:
+            output_format = "console"
+        if fail_on is None:
+            fail_on = "high" if "fail_on_severity" not in config_file_keys() else None
+
     verbosity = _resolve_verbosity(quiet, verbose)
+    # In CI mode, honour the config file's fail_on_severity when the user
+    # gave no explicit threshold (config wins over the 'high' default above).
+    if ci and fail_on is None and config is not None:
+        fail_on = config.fail_on_severity
 
     # Parse agents. Accepts plain names ("Hub") or "name:role" pairs
     # ("Hub:orchestrator") so users can declare an intentional hub on the
@@ -405,10 +444,29 @@ def scan(
         agents=list(agent_nodes.values()),
         events=event_list,
         enable_history=not no_history,
+        config=config,
     )
     _announce_plugins(probe_obj, verbosity)
     report = probe_obj.run_all()
-    report.print_summary(verbosity=verbosity)
+
+    # ---- GitHub Actions integration (CI mode) -------------------------
+    import os as _os
+
+    if ci and _os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
+        from swarm_test.reporters.github import GitHubReporter
+
+        gh_reporter = GitHubReporter()
+        gh_reporter.emit_annotations(report)
+        gh_reporter.write_step_summary(report)
+
+    # ---- Emit report ---------------------------------------------------
+    if (output_format or "console").lower() == "json":
+        import json as _json
+
+        # Emit only the JSON document to stdout so it parses cleanly.
+        print(_json.dumps(report.to_json(graph=probe_obj.graph), indent=2))
+    else:
+        report.print_summary(verbosity=verbosity)
 
     if graph and verbosity != "quiet":
         report.print_graph(graph=probe_obj.graph)
@@ -433,14 +491,18 @@ def scan(
         if verbosity != "quiet":
             console.print(f"[green]Markdown report saved to:[/green] {markdown}")
 
-    if fail_on and report.all_findings:
+    if fail_on and fail_on.lower() != "none" and report.all_findings:
         severity_order = [s.value for s in Severity]
         threshold_idx = severity_order.index(fail_on.lower())
         has_match = any(
             severity_order.index(f.severity.value) <= threshold_idx for f in report.all_findings
         )
         if has_match:
-            console.print(
+            # In json mode stdout must stay clean; send the notice to stderr.
+            msg_console = (
+                Console(stderr=True) if (output_format or "console").lower() == "json" else console
+            )
+            msg_console.print(
                 f"[red]Findings at {fail_on.upper()} or above detected "
                 f"— exiting with code 1[/red]"
             )
@@ -535,6 +597,17 @@ def scan(
     ),
 )
 @click.option(
+    "--ci",
+    "ci",
+    is_flag=True,
+    default=False,
+    help=(
+        "CI gate mode: print the one-line summary and fail the build (exit 1) "
+        "when findings meet/exceed the severity threshold. Defaults the "
+        "threshold to 'high' unless --fail-on-severity or .swarmtest.yml sets it."
+    ),
+)
+@click.option(
     "--quiet",
     "-q",
     "quiet",
@@ -578,6 +651,7 @@ def run_cmd(
     strict: bool | None,
     contracts_path: str | None,
     github_action: bool,
+    ci: bool,
     quiet: bool,
     verbose: bool,
     open_report: bool,
@@ -596,7 +670,12 @@ def run_cmd(
     \b
       swarm-test scan -a "A,B,C" -e "A>B,B>C"
     """
-    from swarm_test.config import find_config_path, load_config, merge_cli_args
+    from swarm_test.config import (
+        config_file_keys,
+        find_config_path,
+        load_config,
+        merge_cli_args,
+    )
 
     # ---- Load config ---------------------------------------------------
     try:
@@ -604,6 +683,17 @@ def run_cmd(
     except (FileNotFoundError, ValueError) as exc:
         console.print(f"[red]Config error: {exc}[/red]")
         sys.exit(2)
+
+    # ---- CI gate mode --------------------------------------------------
+    # --ci is a convenience preset: concise one-line output + a sensible
+    # default severity threshold of 'high'. It never overrides an explicit
+    # --fail-on-severity flag or a fail_on_severity set in .swarmtest.yml —
+    # config still wins, so CI behaviour stays configurable.
+    if ci:
+        if not quiet and not verbose:
+            quiet = True
+        if fail_on_severity is None and "fail_on_severity" not in config_file_keys(config_path):
+            fail_on_severity = "high"
 
     discovered = Path(config_path) if config_path else find_config_path()
     # We'll re-check verbosity after merging CLI overrides; only emit the

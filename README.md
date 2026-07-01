@@ -59,21 +59,54 @@ swarm-test scan -a "Orchestrator,Worker1,Worker2" -e "Orchestrator>Worker1,Orche
 
 ## CI gate (GitHub Action)
 
+Drop this in at `.github/workflows/swarm-test.yml` — it fails the build on any
+`high`-or-worse reliability finding and comments the results on the PR:
+
 ```yaml
 # .github/workflows/swarm-test.yml
+name: swarm-test
 on: [pull_request]
+
+permissions:
+  contents: read
+  checks: write        # required for inline PR annotations
+
 jobs:
   swarm-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: surajkumar811/swarm-test@v0.3.10
+      - uses: surajkumar811/swarm-test@v0        # floating v0 tag — always latest 0.x
         with:
-          script: my_crew.py
+          script: my_crew.py                     # or: agents / edges for a static topology
+          fail-on-severity: high                 # critical | high | medium | low | info | none
+```
+
+**No Python script?** Test a topology inline instead of `script:`:
+
+```yaml
+      - uses: surajkumar811/swarm-test@v0
+        with:
+          agents: "Researcher,Analyst,Writer"
+          edges:  "Researcher>Analyst,Analyst>Writer"
           fail-on-severity: high
 ```
 
-Findings appear inline on the PR as `::error::` / `::warning::` / `::notice::` annotations; the Swarm Score is posted to the workflow job summary.
+**How the gate behaves:**
+
+- Exit **0** when no finding meets/exceeds the threshold; exit **1** when one does; exit **2** on a config/load error.
+- `fail-on-severity` defaults to **`high`** (via the action's built-in `--ci` mode). Omit it to fall back to `fail_on_severity` in your `.swarmtest.yml`; set it to override both.
+- Findings appear inline on the PR as `::error::` (critical) / `::warning::` (high) / `::notice::` (medium+) annotations, and the Swarm Score + verdict is posted to the workflow **job summary**.
+
+**Run the same gate locally** (no Action needed):
+
+```bash
+swarm-test run my_crew.py --ci                       # exit 1 if high+ findings
+swarm-test scan -a "A,B,C" -e "A>B,B>C" --ci         # inline topology, no Python
+swarm-test scan -a "A,B,C" -e "A>B,B>C" --ci --output-format json   # machine-readable
+```
+
+`--ci` prints a one-line summary, defaults the threshold to `high`, and honours `.swarmtest.yml`. Use `--fail-on-severity` to change the threshold.
 
 ## Using it from Python
 

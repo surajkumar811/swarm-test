@@ -36,8 +36,10 @@ class TimeoutResilienceAttack(BaseAttack):
     Analyses the interaction graph for timeout-handling weaknesses.
 
     Checks performed:
-    1. **Missing timeout evidence** — edges with no ``duration_ms`` set, meaning
-       the interaction has no time-bounding.
+    1. **Timing-data coverage** — edges with no ``duration_ms`` set. When timing
+       data exists elsewhere, untimed edges are a genuine partial gap; when no
+       edge carries any timing data (a static scan), timeout resilience cannot
+       be assessed and this is reported as an INFO coverage gap, not a defect.
     2. **Slow interactions** — edges whose ``duration_ms`` exceeds the simulated
        delay tiers (5 s, 15 s, 30 s).
     3. **No error/timeout events downstream** — if an agent has only successful
@@ -81,8 +83,16 @@ class TimeoutResilienceAttack(BaseAttack):
         # the user hasn't told us the dependency is intentional.
         hub_ids: set[str] = role_ctx.intentional_hubs if role_ctx is not None else set()
 
-        # -- Check 1: edges with no duration_ms (no time-bounding) -----------
+        # -- Check 1: edges with no duration_ms ------------------------------
+        # Absence of duration_ms means we have no timing *data* to judge from —
+        # it does NOT prove a timeout is missing. We only treat untimed edges as
+        # a real gap when timing data exists elsewhere in the graph (a live run
+        # that time-bounds some calls but not these). When NO edge carries any
+        # timing data at all (the typical static scan), timeout resilience
+        # simply cannot be assessed — that is a coverage gap, reported as INFO,
+        # not a defect that should fail a CI gate.
         untimed_edges = []
+        any_timing_data = False
         for src, dst, _key, data in edges:
             event_type_str = data.get("event_type", "")
             try:
@@ -94,31 +104,66 @@ class TimeoutResilienceAttack(BaseAttack):
             duration = data.get("duration_ms")
             if duration is None:
                 untimed_edges.append((src, dst, data))
+            else:
+                any_timing_data = True
 
         metrics["edges_without_timeout"] = len(untimed_edges)
+        metrics["timing_data_available"] = any_timing_data
 
         if untimed_edges:
-            severity = Severity.HIGH if len(untimed_edges) > 2 else Severity.MEDIUM
             affected = list({a for src, dst, _ in untimed_edges for a in (src, dst)})
-            findings.append(
-                Finding(
-                    test_name=self.name,
-                    severity=severity,
-                    title=f"{len(untimed_edges)} interaction(s) have no timeout configured",
-                    description=(
-                        f"{len(untimed_edges)} agent-to-agent interactions lack a "
-                        f"recorded duration_ms, indicating no timeout is configured. "
-                        f"A slow or unresponsive agent could block the entire pipeline."
-                    ),
-                    affected_agents=affected,
-                    evidence={"untimed_edge_count": len(untimed_edges)},
-                    remediation=(
-                        f"Add timeout handling on the {len(untimed_edges)} "
-                        f"untimed edge(s) — wrap inter-agent calls with an "
-                        f"explicit timeout and circuit breaker."
-                    ),
+            if not any_timing_data:
+                # No timing data anywhere → coverage gap, honestly reported.
+                findings.append(
+                    Finding(
+                        test_name=self.name,
+                        severity=Severity.INFO,
+                        title="Timeout resilience not assessed — no execution timing data",
+                        description=(
+                            "Timeout resilience could not be assessed — no execution "
+                            "timing data available. This is expected for static scans; "
+                            "run swarm-test on a live script (swarm-test run ...) to "
+                            "enable timing-based timeout analysis."
+                        ),
+                        affected_agents=affected,
+                        evidence={
+                            "untimed_edge_count": len(untimed_edges),
+                            "timing_data_available": False,
+                            "factor": "timeout_coverage_gap",
+                        },
+                        remediation=(
+                            "Run swarm-test against a live execution "
+                            "(swarm-test run <script>) so inter-agent call durations "
+                            "are recorded and timeout resilience can be evaluated."
+                        ),
+                    )
                 )
-            )
+            else:
+                # Some edges are timed, these are not → a genuine partial gap.
+                severity = Severity.HIGH if len(untimed_edges) > 2 else Severity.MEDIUM
+                findings.append(
+                    Finding(
+                        test_name=self.name,
+                        severity=severity,
+                        title=f"{len(untimed_edges)} interaction(s) have no timeout configured",
+                        description=(
+                            f"{len(untimed_edges)} agent-to-agent interactions lack a "
+                            f"recorded duration_ms while other calls in the same run are "
+                            f"timed — these edges have no time-bounding. A slow or "
+                            f"unresponsive agent could block the entire pipeline."
+                        ),
+                        affected_agents=affected,
+                        evidence={
+                            "untimed_edge_count": len(untimed_edges),
+                            "timing_data_available": True,
+                        },
+                        remediation=(
+                            f"Add timeout handling on the {len(untimed_edges)} "
+                            f"untimed edge(s) — wrap inter-agent calls with an "
+                            f"explicit timeout and circuit breaker."
+                        ),
+                    )
+                )
 
         # -- Check 2: slow interactions against delay tiers ------------------
         for src, dst, _key, data in edges:
