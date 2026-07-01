@@ -464,7 +464,10 @@ def scan(
         import json as _json
 
         # Emit only the JSON document to stdout so it parses cleanly.
-        print(_json.dumps(report.to_json(graph=probe_obj.graph), indent=2))
+        # default=str mirrors SwarmReport.to_json's own file writer — the
+        # report dict can hold non-serializable values (e.g. numpy floats from
+        # networkx metrics) that bare json.dumps would choke on.
+        print(_json.dumps(report.to_json(graph=probe_obj.graph), indent=2, default=str))
     else:
         report.print_summary(verbosity=verbosity)
 

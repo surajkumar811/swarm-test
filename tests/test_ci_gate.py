@@ -123,9 +123,12 @@ def test_scan_ci_json_output_is_parseable() -> None:
         text=True,
         timeout=60,
     )
-    assert result.returncode == 1, f"stdout={result.stdout}\nstderr={result.stderr}"
+    diag = f"returncode={result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
+    assert result.returncode == 1, diag
+    # stdout must be pure, parseable JSON — no rich notices, and serialized with
+    # a default=str fallback so numpy/networkx metric types don't crash it.
     data = json.loads(result.stdout)
-    assert "findings" in data
+    assert "findings" in data, diag
 
 
 # ---------------------------------------------------------------------------
