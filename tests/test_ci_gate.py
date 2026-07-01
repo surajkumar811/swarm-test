@@ -12,6 +12,7 @@ Covers the contract a CI pipeline depends on:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 
@@ -101,11 +102,13 @@ def test_scan_fail_on_alias_still_works() -> None:
 
 
 def test_scan_ci_json_output_is_parseable() -> None:
-    """--output-format json emits a clean JSON document to stdout.
+    """--output-format json emits a clean JSON document to stdout — even under Actions.
 
     Run as a real subprocess so stdout is genuinely separate from stderr
-    (CliRunner's stdout/stderr handling varies across Click versions); the
-    human-readable notices go to stderr, leaving stdout pure JSON.
+    (CliRunner's stdout/stderr handling varies across Click versions). Crucially
+    we set GITHUB_ACTIONS=true to reproduce CI: in that mode the CLI emits
+    ::annotation:: workflow commands, which must go to stderr so stdout stays
+    pure JSON. (This is exactly what broke the v0.3.13 CI run.)
     """
     result = subprocess.run(
         [
@@ -122,6 +125,7 @@ def test_scan_ci_json_output_is_parseable() -> None:
         capture_output=True,
         text=True,
         timeout=60,
+        env={**os.environ, "GITHUB_ACTIONS": "true"},
     )
     diag = f"returncode={result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
     assert result.returncode == 1, diag
@@ -132,6 +136,8 @@ def test_scan_ci_json_output_is_parseable() -> None:
     except json.JSONDecodeError as exc:
         raise AssertionError(f"stdout is not valid JSON ({exc})\n{diag}") from exc
     assert "findings" in data, diag
+    # Annotations must still be emitted — just on stderr, not polluting stdout.
+    assert "::error" in result.stderr, diag
 
 
 # ---------------------------------------------------------------------------

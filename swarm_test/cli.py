@@ -456,7 +456,11 @@ def scan(
         from swarm_test.reporters.github import GitHubReporter
 
         gh_reporter = GitHubReporter()
-        gh_reporter.emit_annotations(report)
+        # In json mode stdout must be pure JSON. GitHub parses ::annotation::
+        # workflow commands from stderr just as well as stdout, so route them
+        # there to keep the machine-readable document clean.
+        ann_stream = sys.stderr if (output_format or "console").lower() == "json" else None
+        gh_reporter.emit_annotations(report, stream=ann_stream)
         gh_reporter.write_step_summary(report)
 
     # ---- Emit report ---------------------------------------------------
