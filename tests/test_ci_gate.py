@@ -127,7 +127,10 @@ def test_scan_ci_json_output_is_parseable() -> None:
     assert result.returncode == 1, diag
     # stdout must be pure, parseable JSON — no rich notices, and serialized with
     # a default=str fallback so numpy/networkx metric types don't crash it.
-    data = json.loads(result.stdout)
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise AssertionError(f"stdout is not valid JSON ({exc})\n{diag}") from exc
     assert "findings" in data, diag
 
 
